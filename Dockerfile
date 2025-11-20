@@ -62,7 +62,7 @@ WORKDIR /var/app
 COPY --from=1 /var/app/package.json .
 # COPY --from=1 /var/app/.npmrc .
 COPY --from=1 /var/app/dist .
-COPY --from=1 /var/app/docs ./docs/
+# COPY --from=1 /var/app/docs ./docs/
 
 # RUN chown -R pwcapp:pwcapp /var/app
 
