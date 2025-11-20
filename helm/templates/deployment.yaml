@@ -35,25 +35,35 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: ENV_NAME
-              value: "DEVELOPMENT"
+              value: {{ .Values.env.ENV_NAME | quote }}
             - name: MONGO_HOST
-              value: "cluster0.tvmkw.mongodb.net"
+              value: {{ .Values.env.MONGO_HOST | quote }}
             - name: MONGO_PORT
-              value: "27017"
+              value: {{ .Values.env.MONGO_PORT | quote }}
             - name: MONGO_NAME
-              value: "mdr-video-transcriptions"
+              value: {{ .Values.env.MONGO_NAME | quote }}
             - name: MONGO_PASSWORD
-              value: "ramos111"
+              value: {{ .Values.env.MONGO_PASSWORD | quote }}
             - name: MONGO_USER
-              value: "dbAdmin"
+              value: {{ .Values.env.MONGO_USER | quote }}
             - name: TRANSCRIPTION_PROVIDER
-              value: "openai"
+              value: {{ .Values.env.TRANSCRIPTION_PROVIDER | quote }}
             - name: OPENAI_API_KEY
-              value: ""  # Set via Kubernetes secret in production
+              value: {{ .Values.env.OPENAI_API_KEY | quote }}
             - name: TEMP_AUDIO_DIR
-              value: "/tmp/audio"
+              value: {{ .Values.env.TEMP_AUDIO_DIR | quote }}
             - name: CLEANUP_TEMP_FILES
-              value: "true"
+              value: {{ .Values.env.CLEANUP_TEMP_FILES | quote }}
+            - name: AUDIO_FORMAT
+              value: {{ .Values.env.AUDIO_FORMAT | quote }}
+            - name: AUDIO_CHANNELS
+              value: {{ .Values.env.AUDIO_CHANNELS | quote }}
+            - name: AUDIO_SAMPLE_RATE
+              value: {{ .Values.env.AUDIO_SAMPLE_RATE | quote }}
+            - name: DEFAULT_LANGUAGE
+              value: {{ .Values.env.DEFAULT_LANGUAGE | quote }}
+            - name: MAX_VIDEO_LENGTH_SECONDS
+              value: {{ .Values.env.MAX_VIDEO_LENGTH_SECONDS | quote }}
           ports:
             - name: http
               containerPort: 3000
