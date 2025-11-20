@@ -44,8 +44,8 @@ const controllerSslEnabled = process.env.APPDYNAMICS_CONTROLLER_SSL_ENABLED || t
 const accountName = process.env.APPDYNAMICS_ACCOUNT_NAME || '<accountname>';
 const accountAccessKey = process.env.APPDYNAMICS_ACCOUNT_ACCESS_KEY || '<accesskey>';
 const applicationName = process.env.APPDYNAMICS_APPLICATION_NAME || '<appname>';
-const tierName = 'video-transcription' || process.env.APPDYNAMICS_TIER_NAME;
-const nodeName = 'video-transcription' || process.env.APPDYNAMICS_NODE_NAME;
+const tierName = process.env.APPDYNAMICS_TIER_NAME || 'video-transcription';
+const nodeName = process.env.APPDYNAMICS_NODE_NAME || 'video-transcription';
 
 const appDynamicsConfigs = {
   environmentName: ENV_NAME,
