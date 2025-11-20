@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
 
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    - name: Checkout master
+    - name: Checkout main
       uses: actions/checkout@v4
 
     - name: Update SHA
