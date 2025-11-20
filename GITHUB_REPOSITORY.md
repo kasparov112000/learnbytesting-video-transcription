@@ -11,7 +11,7 @@
 - **Repository Name:** learnbytesting-video-transcription
 - **Visibility:** Public
 - **Description:** Microservice for transcribing YouTube videos using Google Cloud Speech-to-Text or OpenAI Whisper
-- **Default Branch:** master
+- **Default Branch:** main
 
 ### Remote Configuration
 ```
@@ -174,7 +174,7 @@ kasparov112000/learnbytesting-video-transcription-docker
 ```
 
 ### Build Configuration
-- **Branch:** master
+- **Branch:** main
 - **Dockerfile:** Dockerfile
 - **Tag:** latest (and commit SHA tags)
 
@@ -198,7 +198,7 @@ name: Build and Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [main]
 
 jobs:
   build-and-push:
@@ -300,7 +300,7 @@ gh repo edit --add-topic microservice,youtube,transcription,speech-to-text,nodej
 
 ### Branch Protection (Recommended)
 
-Enable branch protection for `master`:
+Enable branch protection for `main`:
 ```bash
 # Via GitHub web interface:
 # Settings → Branches → Add rule
