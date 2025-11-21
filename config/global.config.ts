@@ -1,5 +1,5 @@
 const ENV_NAME = process.env.ENV_NAME || 'LOCAL';
-const msport = (process.env.ENV_NAME || 'LOCAL') !== 'LOCAL' ? 3000 : 3016;
+const msport = 3016;
 const { version: appVersion, name: appName } = require('../package.json');
 
 const serviceConfigs = {
