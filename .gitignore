@@ -49,3 +49,6 @@ coverage/
 
 # Production
 .pm2/
+
+# Claude Code local settings
+.claude/settings.local.json
