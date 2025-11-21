@@ -1,4 +1,4 @@
-import ytdl from 'ytdl-core';
+import youtubedl from 'youtube-dl-exec';
 import * as fs from 'fs';
 import * as path from 'path';
 import { serviceConfigs } from '../../config/global.config';
@@ -23,11 +23,15 @@ export class YouTubeDownloaderService {
 
   /**
    * Extract video ID from YouTube URL
+   * Supports: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
    */
   private extractVideoId(url: string): string {
     try {
-      const videoId = ytdl.getVideoID(url);
-      return videoId;
+      const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([^&?/]+)/);
+      if (!match) {
+        throw new Error(`Invalid YouTube URL: ${url}`);
+      }
+      return match[1];
     } catch (error) {
       throw new Error(`Invalid YouTube URL: ${url}`);
     }
@@ -44,9 +48,18 @@ export class YouTubeDownloaderService {
   }> {
     try {
       const videoId = this.extractVideoId(url);
-      const info = await ytdl.getInfo(url);
 
-      const duration = parseInt(info.videoDetails.lengthSeconds);
+      // Get video info using youtube-dl-exec
+      const info: any = await youtubedl(url, {
+        dumpJson: true,
+        noWarnings: true,
+        noCallHome: true,
+        noCheckCertificate: true,
+        preferFreeFormats: true,
+        youtubeSkipDashManifest: true
+      });
+
+      const duration = Math.floor(info.duration || 0);
 
       // Check video length limit
       if (duration > serviceConfigs.maxVideoLengthSeconds) {
@@ -57,9 +70,9 @@ export class YouTubeDownloaderService {
 
       return {
         videoId,
-        title: info.videoDetails.title,
+        title: info.title || 'Unknown',
         duration,
-        thumbnail: info.videoDetails.thumbnails[0]?.url || ''
+        thumbnail: info.thumbnail || ''
       };
     } catch (error: any) {
       console.error('Error getting video info:', error.message);
@@ -71,55 +84,46 @@ export class YouTubeDownloaderService {
    * Download audio from YouTube video
    */
   async downloadAudio(url: string, videoId: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log(`Starting audio download for video: ${videoId}`);
+    try {
+      console.log(`Starting audio download for video: ${videoId}`);
 
-        const outputPath = path.join(this.tempDir, `${videoId}.mp4`);
+      // youtube-dl-exec with audioFormat 'm4a' creates a file with .mp4.m4a extension
+      const outputPath = path.join(this.tempDir, `${videoId}.mp4.m4a`);
 
-        // Check if file already exists
-        if (fs.existsSync(outputPath)) {
-          console.log(`Audio file already exists: ${outputPath}`);
-          return resolve(outputPath);
-        }
-
-        const audioStream = ytdl(url, {
-          quality: 'highestaudio',
-          filter: 'audioonly'
-        });
-
-        const writeStream = fs.createWriteStream(outputPath);
-
-        audioStream.pipe(writeStream);
-
-        audioStream.on('progress', (chunkLength, downloaded, total) => {
-          const percent = (downloaded / total * 100).toFixed(2);
-          console.log(`Download progress: ${percent}%`);
-        });
-
-        writeStream.on('finish', () => {
-          console.log(`Audio download completed: ${outputPath}`);
-          resolve(outputPath);
-        });
-
-        audioStream.on('error', (error) => {
-          console.error('Error downloading audio:', error);
-          // Clean up partial file
-          if (fs.existsSync(outputPath)) {
-            fs.unlinkSync(outputPath);
-          }
-          reject(new Error(`Failed to download audio: ${error.message}`));
-        });
-
-        writeStream.on('error', (error) => {
-          console.error('Error writing audio file:', error);
-          reject(new Error(`Failed to write audio file: ${error.message}`));
-        });
-      } catch (error: any) {
-        console.error('Error in downloadAudio:', error);
-        reject(error);
+      // Check if file already exists
+      if (fs.existsSync(outputPath)) {
+        console.log(`Audio file already exists: ${outputPath}`);
+        return outputPath;
       }
-    });
+
+      // Download audio using youtube-dl-exec
+      // Note: output path should NOT include the .m4a extension, youtube-dl will add it
+      const tempOutputPath = path.join(this.tempDir, `${videoId}.mp4`);
+      await youtubedl(url, {
+        extractAudio: true,
+        audioFormat: 'm4a',
+        output: tempOutputPath,
+        noWarnings: true,
+        noCheckCertificate: true,
+        preferFreeFormats: true,
+        ffmpegLocation: 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin'
+      });
+
+      console.log(`Audio download completed: ${outputPath}`);
+      return outputPath;
+    } catch (error: any) {
+      console.error('Error downloading audio:', error);
+      // Clean up partial file (could be either .mp4 or .mp4.m4a)
+      const outputPath1 = path.join(this.tempDir, `${videoId}.mp4`);
+      const outputPath2 = path.join(this.tempDir, `${videoId}.mp4.m4a`);
+      if (fs.existsSync(outputPath1)) {
+        fs.unlinkSync(outputPath1);
+      }
+      if (fs.existsSync(outputPath2)) {
+        fs.unlinkSync(outputPath2);
+      }
+      throw new Error(`Failed to download audio: ${error.message}`);
+    }
   }
 
   /**

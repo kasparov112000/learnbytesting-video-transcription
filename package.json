@@ -17,8 +17,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@distube/ytdl-core": "~4.16.12",
     "@google-cloud/speech": "^6.0.0",
-    "@google-cloud/storage": "^7.7.0",
+    "@google-cloud/storage": "~7.17.3",
     "@types/fluent-ffmpeg": "^2.1.24",
     "@types/node": "^18.19.0",
     "awilix": "^4.2.6",
@@ -42,7 +43,7 @@
     "morgan": "^1.10.0",
     "node-cache": "^5.1.2",
     "openai": "^4.20.1",
-    "ytdl-core": "^4.11.5"
+    "youtube-dl-exec": "~3.0.26"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",

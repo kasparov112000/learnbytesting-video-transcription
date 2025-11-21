@@ -12,12 +12,16 @@ const serviceConfigs = {
   // MongoDB Configuration
   mongoDbUrl: process.env.MONGODB_URL || 'mongodb://localhost:27017/mdr-video-transcriptions',
 
-  // Transcription Service Provider: 'google' or 'openai'
+  // Transcription Service Provider: 'google' or 'openai' or 'mock'
   transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'google',
+
+  // Mock Transcription (for testing without API charges)
+  useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION === 'true',
 
   // Google Cloud Speech-to-Text Configuration
   googleCloudProjectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
   googleApplicationCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  gcsBucketName: process.env.GCS_BUCKET_NAME || 'lbt-video-transcription-temp',
 
   // OpenAI Configuration
   openaiApiKey: process.env.OPENAI_API_KEY,

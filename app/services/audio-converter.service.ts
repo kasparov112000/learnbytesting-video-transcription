@@ -4,6 +4,17 @@ import * as path from 'path';
 import { serviceConfigs } from '../../config/global.config';
 
 export class AudioConverterService {
+  constructor() {
+    // Configure ffmpeg path for Windows
+    const ffmpegPath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin\\ffmpeg.exe';
+    const ffprobePath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin\\ffprobe.exe';
+
+    ffmpeg.setFfmpegPath(ffmpegPath);
+    ffmpeg.setFfprobePath(ffprobePath);
+
+    console.log('FFmpeg configured at:', ffmpegPath);
+  }
+
   /**
    * Convert audio file to format suitable for speech recognition
    * @param inputPath Path to the input audio file (MP4, MP3, etc.)

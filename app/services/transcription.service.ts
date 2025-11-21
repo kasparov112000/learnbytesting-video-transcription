@@ -3,6 +3,7 @@ import { YouTubeDownloaderService } from './youtube-downloader.service';
 import { AudioConverterService } from './audio-converter.service';
 import { GoogleSpeechService } from './google-speech.service';
 import { OpenAIWhisperService } from './openai-whisper.service';
+import { MockTranscriptionService } from './mock-transcription.service';
 import { serviceConfigs } from '../../config/global.config';
 import mongoose from 'mongoose';
 
@@ -11,6 +12,7 @@ export class TranscriptionService {
   private audioConverter: AudioConverterService;
   private googleSpeech: GoogleSpeechService | null = null;
   private openaiWhisper: OpenAIWhisperService | null = null;
+  private mockTranscription: MockTranscriptionService | null = null;
 
   constructor() {
     this.youtubeDownloader = new YouTubeDownloaderService();
@@ -24,8 +26,14 @@ export class TranscriptionService {
    * Initialize transcription providers based on configuration
    */
   private initializeProviders(): void {
-    const provider = serviceConfigs.transcriptionProvider;
+    // Check if mock mode is enabled
+    if (serviceConfigs.useMockTranscription) {
+      console.log('🎭 Initializing MOCK transcription provider (no API charges)');
+      this.mockTranscription = new MockTranscriptionService();
+      return;
+    }
 
+    const provider = serviceConfigs.transcriptionProvider;
     console.log(`Initializing transcription provider: ${provider}`);
 
     try {
@@ -33,6 +41,9 @@ export class TranscriptionService {
         this.googleSpeech = new GoogleSpeechService();
       } else if (provider === 'openai') {
         this.openaiWhisper = new OpenAIWhisperService();
+      } else if (provider === 'mock') {
+        console.log('🎭 Using MOCK transcription provider (no API charges)');
+        this.mockTranscription = new MockTranscriptionService();
       } else {
         console.warn(`Unknown transcription provider: ${provider}. Defaulting to Google.`);
         this.googleSpeech = new GoogleSpeechService();
@@ -154,8 +165,14 @@ export class TranscriptionService {
       console.log('Step 3: Transcribing audio...');
       let transcriptText: string;
 
-      if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
+      if (serviceConfigs.useMockTranscription && this.mockTranscription) {
+        // Use mock transcription (no API charges)
+        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath, transcript.language);
+      } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
         transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+      } else if (serviceConfigs.transcriptionProvider === 'mock' && this.mockTranscription) {
+        // Alternative way to enable mock
+        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath, transcript.language);
       } else if (this.googleSpeech) {
         transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
       } else {

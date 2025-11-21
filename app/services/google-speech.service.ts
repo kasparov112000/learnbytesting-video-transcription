@@ -1,9 +1,12 @@
 import { SpeechClient } from '@google-cloud/speech';
 import * as fs from 'fs';
+import * as path from 'path';
 import { serviceConfigs } from '../../config/global.config';
+import { GCSStorageService } from './gcs-storage.service';
 
 export class GoogleSpeechService {
   private client: SpeechClient;
+  private gcsStorage: GCSStorageService;
 
   constructor() {
     try {
@@ -13,6 +16,9 @@ export class GoogleSpeechService {
         projectId: serviceConfigs.googleCloudProjectId,
         keyFilename: serviceConfigs.googleApplicationCredentials
       });
+
+      // Initialize GCS storage for large files
+      this.gcsStorage = new GCSStorageService();
 
       console.log('Google Cloud Speech-to-Text client initialized');
     } catch (error: any) {
@@ -110,25 +116,28 @@ export class GoogleSpeechService {
   }
 
   /**
-   * Transcribe large audio files using long-running operation
+   * Transcribe large audio files using long-running operation with GCS
    */
   private async transcribeLongRunning(audioFilePath: string, language: string): Promise<string> {
+    let gcsUri: string | null = null;
+
     try {
-      console.log('Starting long-running transcription operation...');
+      console.log('Starting long-running transcription operation with GCS...');
 
-      // For long-running operations, we need to upload the file to Google Cloud Storage
-      // For now, we'll fall back to synchronous recognition with chunking
-      console.warn('Long-running operation requires Google Cloud Storage. Falling back to synchronous recognition.');
+      // 1. Upload file to Google Cloud Storage
+      const fileName = `audio-${Date.now()}-${path.basename(audioFilePath)}`;
+      console.log(`Uploading file to GCS: ${fileName}`);
 
-      // Read and process the file
-      const audioBytes = fs.readFileSync(audioFilePath);
-      const audioBase64 = audioBytes.toString('base64');
+      gcsUri = await this.gcsStorage.uploadFile(audioFilePath, fileName);
+      console.log(`File uploaded to: ${gcsUri}`);
 
+      // 2. Determine audio encoding
       const encoding = audioFilePath.endsWith('.wav') ? 'LINEAR16' : 'FLAC';
 
+      // 3. Configure long-running recognition request
       const request: any = {
         audio: {
-          content: audioBase64
+          uri: gcsUri // Use GCS URI instead of content
         },
         config: {
           encoding,
@@ -136,22 +145,49 @@ export class GoogleSpeechService {
           languageCode: language,
           enableAutomaticPunctuation: true,
           model: 'video',
-          useEnhanced: true
+          useEnhanced: true,
+          audioChannelCount: serviceConfigs.audioChannels
         }
       };
 
-      const [response] = await this.client.recognize(request);
+      console.log('Starting long-running recognition operation...');
 
+      // 4. Start long-running operation
+      const [operation] = await this.client.longRunningRecognize(request);
+
+      console.log('Waiting for operation to complete...');
+
+      // 5. Wait for the operation to complete
+      const [response] = await operation.promise();
+
+      console.log('Long-running operation completed');
+
+      // 6. Extract transcript from results
       const transcript = response.results
         ?.map((result: any) => result.alternatives?.[0]?.transcript || '')
         .filter(text => text.trim().length > 0)
         .join('\n') || '';
+
+      console.log(`Transcription completed. Length: ${transcript.length} characters`);
 
       return transcript;
 
     } catch (error: any) {
       console.error('Error in long-running transcription:', error.message);
       throw error;
+
+    } finally {
+      // 7. Clean up: Delete file from GCS
+      if (gcsUri) {
+        try {
+          console.log('Cleaning up GCS file...');
+          await this.gcsStorage.deleteFileByUri(gcsUri);
+          console.log('GCS file deleted successfully');
+        } catch (cleanupError: any) {
+          console.error('Error cleaning up GCS file:', cleanupError.message);
+          // Don't throw - cleanup errors shouldn't fail the transcription
+        }
+      }
     }
   }
 
