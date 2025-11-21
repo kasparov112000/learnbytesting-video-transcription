@@ -12,11 +12,14 @@ const serviceConfigs = {
   // MongoDB Configuration
   mongoDbUrl: process.env.MONGODB_URL || 'mongodb://localhost:27017/mdr-video-transcriptions',
 
-  // Transcription Service Provider: 'google' or 'openai' or 'mock'
-  transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'google',
+  // Transcription Service Provider: 'google', 'openai', 'self-hosted', or 'mock'
+  transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'self-hosted',
 
   // Mock Transcription (for testing without API charges)
   useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION === 'true',
+
+  // Self-hosted Whisper Configuration (recommended - 95% cost savings!)
+  whisperServiceUrl: process.env.WHISPER_SERVICE_URL || 'http://localhost:5000',
 
   // Google Cloud Speech-to-Text Configuration
   googleCloudProjectId: process.env.GOOGLE_CLOUD_PROJECT_ID,

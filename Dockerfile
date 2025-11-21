@@ -11,11 +11,16 @@ FROM scratch
 #
 # BUILD
 #
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /var/app
+
+# Install Python 3 early for youtube-dl-exec
+RUN apk add --no-cache python3 py3-pip
 
 ADD package.json .
 # ADD .npmrc .
+# Skip Python check as we have Python installed
+ENV YOUTUBE_DL_SKIP_PYTHON_CHECK=1
 RUN npm install
 COPY . .
 RUN npm run build
@@ -23,7 +28,7 @@ RUN npm run build
 #
 # UNIT TESTING
 #
-FROM node:18-alpine
+FROM node:20-alpine
 
 ARG UNIT_TEST=no
 WORKDIR /var/app
@@ -39,7 +44,7 @@ RUN if [ "${UNIT_TEST}" = "yes" ]; then \
 #
 # RUNTIME
 #
-FROM node:18-alpine
+FROM node:20-alpine
 EXPOSE 3000
 
 ENV ENV_NAME=deployed
@@ -51,8 +56,11 @@ ENV PROFILER_SERVICE_NAME=video-transcription
 ENV PROFILER_SERVICE_URL=http://smtp-ms.egg-smtp.svc.cluster.local
 ENV ENV_NAME=${ENV_NAME}
 
-# Install FFmpeg for audio processing
-RUN apk add --no-cache ffmpeg
+# Install FFmpeg and Python 3.11 for youtube-dl-exec (yt-dlp requires Python 3.10+)
+RUN apk add --no-cache \
+    ffmpeg \
+    python3 \
+    py3-pip
 
 # RUN addgroup pwcapp \
 #     && adduser --home /var/app --ingroup pwcapp --gecos 'PwC' --disabled-password pwcapp

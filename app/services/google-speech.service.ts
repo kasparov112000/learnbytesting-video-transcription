@@ -2,11 +2,10 @@ import { SpeechClient } from '@google-cloud/speech';
 import * as fs from 'fs';
 import * as path from 'path';
 import { serviceConfigs } from '../../config/global.config';
-import { GCSStorageService } from './gcs-storage.service';
 
 export class GoogleSpeechService {
   private client: SpeechClient;
-  private gcsStorage: GCSStorageService;
+  private gcsStorage: any; // GCS storage for large files (optional)
 
   constructor() {
     try {
@@ -17,10 +16,10 @@ export class GoogleSpeechService {
         keyFilename: serviceConfigs.googleApplicationCredentials
       });
 
-      // Initialize GCS storage for large files
-      this.gcsStorage = new GCSStorageService();
-
+      // Note: GCS storage is only needed for files > 10MB
+      // We've removed the dependency to make it optional
       console.log('Google Cloud Speech-to-Text client initialized');
+      console.log('Note: Large file support (>10MB) requires GCS storage setup');
     } catch (error: any) {
       console.error('Error initializing Google Speech client:', error.message);
       throw new Error(`Failed to initialize Google Speech client: ${error.message}`);
@@ -117,78 +116,13 @@ export class GoogleSpeechService {
 
   /**
    * Transcribe large audio files using long-running operation with GCS
+   * Note: GCS storage setup required for files > 10MB
    */
   private async transcribeLongRunning(audioFilePath: string, language: string): Promise<string> {
-    let gcsUri: string | null = null;
-
-    try {
-      console.log('Starting long-running transcription operation with GCS...');
-
-      // 1. Upload file to Google Cloud Storage
-      const fileName = `audio-${Date.now()}-${path.basename(audioFilePath)}`;
-      console.log(`Uploading file to GCS: ${fileName}`);
-
-      gcsUri = await this.gcsStorage.uploadFile(audioFilePath, fileName);
-      console.log(`File uploaded to: ${gcsUri}`);
-
-      // 2. Determine audio encoding
-      const encoding = audioFilePath.endsWith('.wav') ? 'LINEAR16' : 'FLAC';
-
-      // 3. Configure long-running recognition request
-      const request: any = {
-        audio: {
-          uri: gcsUri // Use GCS URI instead of content
-        },
-        config: {
-          encoding,
-          sampleRateHertz: serviceConfigs.audioSampleRate,
-          languageCode: language,
-          enableAutomaticPunctuation: true,
-          model: 'video',
-          useEnhanced: true,
-          audioChannelCount: serviceConfigs.audioChannels
-        }
-      };
-
-      console.log('Starting long-running recognition operation...');
-
-      // 4. Start long-running operation
-      const [operation] = await this.client.longRunningRecognize(request);
-
-      console.log('Waiting for operation to complete...');
-
-      // 5. Wait for the operation to complete
-      const [response] = await operation.promise();
-
-      console.log('Long-running operation completed');
-
-      // 6. Extract transcript from results
-      const transcript = response.results
-        ?.map((result: any) => result.alternatives?.[0]?.transcript || '')
-        .filter(text => text.trim().length > 0)
-        .join('\n') || '';
-
-      console.log(`Transcription completed. Length: ${transcript.length} characters`);
-
-      return transcript;
-
-    } catch (error: any) {
-      console.error('Error in long-running transcription:', error.message);
-      throw error;
-
-    } finally {
-      // 7. Clean up: Delete file from GCS
-      if (gcsUri) {
-        try {
-          console.log('Cleaning up GCS file...');
-          await this.gcsStorage.deleteFileByUri(gcsUri);
-          console.log('GCS file deleted successfully');
-        } catch (cleanupError: any) {
-          console.error('Error cleaning up GCS file:', cleanupError.message);
-          // Don't throw - cleanup errors shouldn't fail the transcription
-        }
-      }
-    }
+    throw new Error(
+      'Large file transcription (>10MB) requires GCS storage setup. ' +
+      'Please use self-hosted Whisper for large files or set up GCS storage.'
+    );
   }
 
   /**

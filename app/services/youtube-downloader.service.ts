@@ -53,8 +53,8 @@ export class YouTubeDownloaderService {
       const info: any = await youtubedl(url, {
         dumpJson: true,
         noWarnings: true,
-        noCallHome: true,
-        noCheckCertificate: true,
+        callHome: false,
+        noCheckCertificates: true,
         preferFreeFormats: true,
         youtubeSkipDashManifest: true
       });
@@ -104,9 +104,9 @@ export class YouTubeDownloaderService {
         audioFormat: 'm4a',
         output: tempOutputPath,
         noWarnings: true,
-        noCheckCertificate: true,
-        preferFreeFormats: true,
-        ffmpegLocation: 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin'
+        noCheckCertificates: true,
+        preferFreeFormats: true
+        // ffmpegLocation is auto-detected in Docker/Linux
       });
 
       console.log(`Audio download completed: ${outputPath}`);

@@ -5,14 +5,30 @@ import { serviceConfigs } from '../../config/global.config';
 
 export class AudioConverterService {
   constructor() {
-    // Configure ffmpeg path for Windows
-    const ffmpegPath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin\\ffmpeg.exe';
-    const ffprobePath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin\\ffprobe.exe';
+    // Auto-detect FFmpeg path based on environment
+    // In Docker/Linux, ffmpeg is in PATH and doesn't need explicit path
+    // In Windows, use specific path if needed
 
-    ffmpeg.setFfmpegPath(ffmpegPath);
-    ffmpeg.setFfprobePath(ffprobePath);
+    const isWindows = process.platform === 'win32';
+    const isDocker = process.env.ENV_NAME === 'deployed' || fs.existsSync('/.dockerenv');
 
-    console.log('FFmpeg configured at:', ffmpegPath);
+    if (isWindows && !isDocker) {
+      // Windows local development - use specific path if it exists
+      const windowsPath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin';
+      const ffmpegPath = path.join(windowsPath, 'ffmpeg.exe');
+      const ffprobePath = path.join(windowsPath, 'ffprobe.exe');
+
+      if (fs.existsSync(ffmpegPath)) {
+        ffmpeg.setFfmpegPath(ffmpegPath);
+        ffmpeg.setFfprobePath(ffprobePath);
+        console.log('FFmpeg configured at:', ffmpegPath);
+      } else {
+        console.log('FFmpeg using system PATH (ffmpeg command)');
+      }
+    } else {
+      // Docker/Linux - ffmpeg is in PATH
+      console.log('FFmpeg using system PATH (Docker/Linux)');
+    }
   }
 
   /**

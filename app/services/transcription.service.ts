@@ -3,6 +3,7 @@ import { YouTubeDownloaderService } from './youtube-downloader.service';
 import { AudioConverterService } from './audio-converter.service';
 import { GoogleSpeechService } from './google-speech.service';
 import { OpenAIWhisperService } from './openai-whisper.service';
+import { SelfHostedWhisperService } from './self-hosted-whisper.service';
 import { MockTranscriptionService } from './mock-transcription.service';
 import { serviceConfigs } from '../../config/global.config';
 import mongoose from 'mongoose';
@@ -12,6 +13,7 @@ export class TranscriptionService {
   private audioConverter: AudioConverterService;
   private googleSpeech: GoogleSpeechService | null = null;
   private openaiWhisper: OpenAIWhisperService | null = null;
+  private selfHostedWhisper: SelfHostedWhisperService | null = null;
   private mockTranscription: MockTranscriptionService | null = null;
 
   constructor() {
@@ -37,7 +39,10 @@ export class TranscriptionService {
     console.log(`Initializing transcription provider: ${provider}`);
 
     try {
-      if (provider === 'google') {
+      if (provider === 'self-hosted') {
+        console.log('🚀 Using SELF-HOSTED Whisper (95% cost savings!)');
+        this.selfHostedWhisper = new SelfHostedWhisperService();
+      } else if (provider === 'google') {
         this.googleSpeech = new GoogleSpeechService();
       } else if (provider === 'openai') {
         this.openaiWhisper = new OpenAIWhisperService();
@@ -45,8 +50,8 @@ export class TranscriptionService {
         console.log('🎭 Using MOCK transcription provider (no API charges)');
         this.mockTranscription = new MockTranscriptionService();
       } else {
-        console.warn(`Unknown transcription provider: ${provider}. Defaulting to Google.`);
-        this.googleSpeech = new GoogleSpeechService();
+        console.warn(`Unknown transcription provider: ${provider}. Defaulting to self-hosted Whisper.`);
+        this.selfHostedWhisper = new SelfHostedWhisperService();
       }
     } catch (error: any) {
       console.error(`Failed to initialize ${provider} provider:`, error.message);
@@ -69,8 +74,24 @@ export class TranscriptionService {
     try {
       console.log(`Starting transcription for: ${youtubeUrl}`);
 
-      // 1. Get video information
-      const videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
+      // Check if we're using mock mode
+      const useMock = serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock';
+
+      // 1. Get video information (or use mock data)
+      let videoInfo;
+      if (useMock) {
+        console.log('🎭 MOCK MODE: Using mock video info (no YouTube API calls)');
+        // Extract video ID from URL or generate a mock one
+        const videoIdMatch = youtubeUrl.match(/[?&]v=([^&]+)/);
+        videoInfo = {
+          videoId: videoIdMatch ? videoIdMatch[1] : 'mock-' + Date.now(),
+          title: 'Mock Video - ' + new Date().toISOString(),
+          duration: 300, // 5 minutes mock duration
+          thumbnail: 'https://via.placeholder.com/480x360?text=Mock+Video'
+        };
+      } else {
+        videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
+      }
 
       console.log(`Video: ${videoInfo.title}`);
       console.log(`Duration: ${videoInfo.duration}s`);
@@ -143,23 +164,32 @@ export class TranscriptionService {
       transcript.progress = 10;
       await transcript.save();
 
-      // 1. Download audio from YouTube
-      console.log('Step 1: Downloading audio...');
-      audioFilePath = await this.youtubeDownloader.downloadAudio(
-        transcript.youtubeUrl,
-        transcript.videoId
-      );
+      // Check if we're using mock transcription (skip download for faster testing)
+      const useMock = serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock';
 
-      transcript.progress = 30;
-      transcript.audioFilePath = audioFilePath;
-      await transcript.save();
+      if (useMock) {
+        console.log('🎭 MOCK MODE: Skipping YouTube download and audio conversion');
+        transcript.progress = 50;
+        await transcript.save();
+      } else {
+        // 1. Download audio from YouTube
+        console.log('Step 1: Downloading audio...');
+        audioFilePath = await this.youtubeDownloader.downloadAudio(
+          transcript.youtubeUrl,
+          transcript.videoId
+        );
 
-      // 2. Convert audio to speech-recognizable format
-      console.log('Step 2: Converting audio format...');
-      convertedAudioPath = await this.audioConverter.convertToSpeechFormat(audioFilePath);
+        transcript.progress = 30;
+        transcript.audioFilePath = audioFilePath;
+        await transcript.save();
 
-      transcript.progress = 50;
-      await transcript.save();
+        // 2. Convert audio to speech-recognizable format
+        console.log('Step 2: Converting audio format...');
+        convertedAudioPath = await this.audioConverter.convertToSpeechFormat(audioFilePath);
+
+        transcript.progress = 50;
+        await transcript.save();
+      }
 
       // 3. Transcribe audio using the configured provider
       console.log('Step 3: Transcribing audio...');
@@ -167,12 +197,14 @@ export class TranscriptionService {
 
       if (serviceConfigs.useMockTranscription && this.mockTranscription) {
         // Use mock transcription (no API charges)
-        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath, transcript.language);
+        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language);
+      } else if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
+        transcriptText = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
         transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'mock' && this.mockTranscription) {
         // Alternative way to enable mock
-        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath, transcript.language);
+        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language);
       } else if (this.googleSpeech) {
         transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
       } else {
