@@ -92,15 +92,15 @@ env:
   MONGO_PASSWORD: "ramos111"
 
   # Transcription Provider: 'google' or 'openai'
-  TRANSCRIPTION_PROVIDER: "openai"
-
-  # OpenAI Configuration (required if TRANSCRIPTION_PROVIDER=openai)
-  # IMPORTANT: Set this value for the deployment to work
-  OPENAI_API_KEY: ""
+  TRANSCRIPTION_PROVIDER: "google"
 
   # Google Cloud Configuration (required if TRANSCRIPTION_PROVIDER=google)
-  # GOOGLE_CLOUD_PROJECT_ID: ""
-  # GOOGLE_APPLICATION_CREDENTIALS: ""
+  GOOGLE_CLOUD_PROJECT_ID: "learnbytesting-ai"
+  # Path inside container where credentials will be mounted via Kubernetes secret
+  GOOGLE_APPLICATION_CREDENTIALS: "/etc/google/credentials.json"
+
+  # OpenAI Configuration (required if TRANSCRIPTION_PROVIDER=openai)
+  # OPENAI_API_KEY: ""
 
   # File Storage Configuration
   TEMP_AUDIO_DIR: "/tmp/audio"

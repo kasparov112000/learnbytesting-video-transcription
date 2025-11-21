@@ -48,6 +48,10 @@ spec:
               value: {{ .Values.env.MONGO_USER | quote }}
             - name: TRANSCRIPTION_PROVIDER
               value: {{ .Values.env.TRANSCRIPTION_PROVIDER | quote }}
+            - name: GOOGLE_CLOUD_PROJECT_ID
+              value: {{ .Values.env.GOOGLE_CLOUD_PROJECT_ID | quote }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: {{ .Values.env.GOOGLE_APPLICATION_CREDENTIALS | quote }}
             - name: OPENAI_API_KEY
               value: {{ .Values.env.OPENAI_API_KEY | quote }}
             - name: TEMP_AUDIO_DIR
@@ -68,6 +72,10 @@ spec:
             - name: http
               containerPort: 3000
               protocol: TCP
+          volumeMounts:
+            - name: google-credentials
+              mountPath: /etc/google
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -76,6 +84,13 @@ spec:
             periodSeconds: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: google-credentials
+          secret:
+            secretName: google-cloud-credentials
+            items:
+              - key: credentials.json
+                path: credentials.json
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
