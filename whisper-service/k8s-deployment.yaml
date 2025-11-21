@@ -1,0 +1,94 @@
+---
+# Whisper Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whisper-service
+  labels:
+    app: whisper-service
+    tier: backend
+spec:
+  replicas: 1  # Start with 1, can scale up based on demand
+  selector:
+    matchLabels:
+      app: whisper-service
+  template:
+    metadata:
+      labels:
+        app: whisper-service
+    spec:
+      containers:
+      - name: whisper
+        image: kasparov112000/learnbytesting-whisper-service:latest
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: WHISPER_MODEL
+          value: "base"  # Options: tiny, base, small, medium, large
+        - name: PORT
+          value: "5000"
+        resources:
+          requests:
+            memory: "2Gi"   # Base model needs ~2GB
+            cpu: "1000m"    # 1 CPU core minimum
+          limits:
+            memory: "4Gi"   # Max 4GB (prevents OOM)
+            cpu: "2000m"    # Max 2 CPU cores
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 60  # Model loading takes time
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+---
+# Service to expose Whisper
+apiVersion: v1
+kind: Service
+metadata:
+  name: whisper-service
+  labels:
+    app: whisper-service
+spec:
+  type: ClusterIP  # Internal only, accessed by video-transcription service
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: whisper-service
+---
+# Optional: HorizontalPodAutoscaler (scale based on CPU)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: whisper-service-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: whisper-service
+  minReplicas: 1
+  maxReplicas: 3  # Max 3 pods for cost control
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Scale up at 70% CPU
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80  # Scale up at 80% memory
