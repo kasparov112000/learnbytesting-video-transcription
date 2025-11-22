@@ -64,5 +64,5 @@ jobs:
     - name: Deploy
       uses: WyriHaximus/github-action-helm3@v2
       with:
-          exec: helm upgrade video-transcription ./helm/ --install --wait --atomic --force --set=app.name=video-transcription --set=image.tag=${{ github.sha }} --values=./helm/values.yaml
+          exec: helm upgrade video-transcription ./helm/ --install --wait --atomic --timeout=10m --force --set=app.name=video-transcription --set=image.tag=${{ github.sha }} --values=./helm/values.yaml
           kubeconfig: '${{ secrets.KUBECONFIG }}'
