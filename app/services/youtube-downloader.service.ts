@@ -99,15 +99,30 @@ export class YouTubeDownloaderService {
       // Download audio using youtube-dl-exec
       // Note: output path should NOT include the .m4a extension, youtube-dl will add it
       const tempOutputPath = path.join(this.tempDir, `${videoId}.mp4`);
-      await youtubedl(url, {
+
+      // Configure FFmpeg location for Windows
+      const isWindows = process.platform === 'win32';
+      const isDocker = process.env.ENV_NAME === 'deployed' || fs.existsSync('/.dockerenv');
+      const ytdlOptions: any = {
         extractAudio: true,
         audioFormat: 'm4a',
         output: tempOutputPath,
         noWarnings: true,
         noCheckCertificates: true,
         preferFreeFormats: true
-        // ffmpegLocation is auto-detected in Docker/Linux
-      });
+      };
+
+      // Add ffmpeg location for Windows local development
+      if (isWindows && !isDocker) {
+        const windowsPath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin';
+        const ffmpegPath = path.join(windowsPath, 'ffmpeg.exe');
+        if (fs.existsSync(ffmpegPath)) {
+          ytdlOptions.ffmpegLocation = ffmpegPath;
+          console.log(`Using FFmpeg at: ${ffmpegPath}`);
+        }
+      }
+
+      await youtubedl(url, ytdlOptions);
 
       console.log(`Audio download completed: ${outputPath}`);
       return outputPath;

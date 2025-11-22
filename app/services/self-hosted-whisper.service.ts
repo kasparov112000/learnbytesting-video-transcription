@@ -1,5 +1,6 @@
 import FormData from 'form-data';
 import * as fs from 'fs';
+import * as path from 'path';
 import axios from 'axios';
 import { serviceConfigs } from '../../config/global.config';
 
@@ -20,21 +21,26 @@ export class SelfHostedWhisperService {
    */
   async transcribe(audioFilePath: string, language: string = 'en-US'): Promise<string> {
     try {
-      console.log(`Starting self-hosted Whisper transcription: ${audioFilePath}`);
+      // Convert to absolute path if it's relative
+      const absolutePath = path.isAbsolute(audioFilePath)
+        ? audioFilePath
+        : path.resolve(process.cwd(), audioFilePath);
+
+      console.log(`Starting self-hosted Whisper transcription: ${absolutePath}`);
       console.log(`Language: ${language}`);
 
       // Check if file exists
-      if (!fs.existsSync(audioFilePath)) {
-        throw new Error(`Audio file not found: ${audioFilePath}`);
+      if (!fs.existsSync(absolutePath)) {
+        throw new Error(`Audio file not found: ${absolutePath}`);
       }
 
       // Get file size for logging
-      const stats = fs.statSync(audioFilePath);
+      const stats = fs.statSync(absolutePath);
       const fileSizeMB = stats.size / (1024 * 1024);
       console.log(`Audio file size: ${fileSizeMB.toFixed(2)} MB`);
 
       // Read file into buffer to avoid "file deleted while streaming" issues
-      const audioBuffer = fs.readFileSync(audioFilePath);
+      const audioBuffer = fs.readFileSync(absolutePath);
       console.log(`Read ${audioBuffer.length} bytes from audio file`);
 
       // Create form data with buffer instead of stream

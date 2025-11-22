@@ -6,7 +6,8 @@
 
 # Configuration
 API_URL="http://localhost:3016"
-YOUTUBE_URL="https://www.youtube.com/watch?v=rBG1Lty78lI"
+# Use environment variable if set, otherwise use default
+YOUTUBE_URL="${YOUTUBE_URL:-https://www.youtube.com/watch?v=rBG1Lty78lI}"
 LANGUAGE="en-US"
 
 echo "=========================================="

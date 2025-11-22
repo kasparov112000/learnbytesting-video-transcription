@@ -12,11 +12,20 @@ Requirements:
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import whisper
 import tempfile
 import os
 import logging
 import time
+
+# Add FFmpeg to PATH for Windows
+if os.name == 'nt':  # Windows
+    ffmpeg_path = r'C:\Users\Renato\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0-essentials_build\bin'
+    if os.path.exists(ffmpeg_path) and ffmpeg_path not in os.environ['PATH']:
+        os.environ['PATH'] = ffmpeg_path + os.pathsep + os.environ['PATH']
+        logger_pre = logging.getLogger(__name__)
+        logger_pre.info(f"Added FFmpeg to PATH: {ffmpeg_path}")
+
+import whisper
 
 # Setup logging
 logging.basicConfig(

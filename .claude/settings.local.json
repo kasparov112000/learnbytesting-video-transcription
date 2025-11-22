@@ -5,7 +5,22 @@
       "Bash(git commit:*)",
       "Bash(git push)",
       "Bash(git pull:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(pip install:*)",
+      "Bash($env:PATH += \";C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin\")",
+      "Bash(python -c \"import subprocess; print(subprocess.run([''ffmpeg'', ''-version''], capture_output=True, text=True).stdout[:100])\")",
+      "Bash(python whisper-service.py:*)",
+      "Bash(bash test-transcription.sh:*)",
+      "Bash(YOUTUBE_URL=\"https://www.youtube.com/watch?v=rBG1Lty78lI\" bash:*)",
+      "Bash(npm run start)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /F /PID 50704\")",
+      "Bash(set PORT=3333)",
+      "Bash(powershell -Command \"Stop-Process -Id 50704 -Force\")",
+      "Bash(npm run build:*)",
+      "Bash(gh run list:*)"
     ],
     "deny": [],
     "ask": []
