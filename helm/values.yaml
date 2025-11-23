@@ -80,7 +80,10 @@ env:
   # Environment name (LOCAL, DEVELOPMENT, PRODUCTION)
   ENV_NAME: "DEVELOPMENT"
 
-  # MongoDB Configuration
+  # MongoDB Configuration - Using full connection string
+  MONGODB_URL: "mongodb+srv://dbAdmin:ramos111@cluster0.tvmkw.mongodb.net/mdr-video-transcriptions?retryWrites=true&w=majority"
+
+  # Individual MongoDB vars (legacy - not used by this service)
   MONGO_HOST: "cluster0.tvmkw.mongodb.net"
   MONGO_PORT: "27017"
   MONGO_NAME: "mdr-video-transcriptions"

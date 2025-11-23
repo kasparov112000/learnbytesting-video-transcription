@@ -38,6 +38,8 @@ spec:
           env:
             - name: ENV_NAME
               value: {{ .Values.env.ENV_NAME | quote }}
+            - name: MONGODB_URL
+              value: {{ .Values.env.MONGODB_URL | quote }}
             - name: MONGO_HOST
               value: {{ .Values.env.MONGO_HOST | quote }}
             - name: MONGO_PORT
