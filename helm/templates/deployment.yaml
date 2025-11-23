@@ -80,6 +80,9 @@ spec:
             - name: google-credentials
               mountPath: /etc/google
               readOnly: true
+            - name: youtube-cookies
+              mountPath: /etc/youtube-cookies
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -96,6 +99,13 @@ spec:
             items:
               - key: credentials.json
                 path: credentials.json
+        - name: youtube-cookies
+          configMap:
+            name: youtube-cookies
+            optional: true
+            items:
+              - key: cookies.txt
+                path: cookies.txt
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
