@@ -15,13 +15,16 @@ FROM node:20-alpine
 WORKDIR /var/app
 
 # Install Python 3 early for youtube-dl-exec
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache python3 py3-pip ffmpeg
 
 ADD package.json .
 # ADD .npmrc .
 # Skip Python check as we have Python installed
 ENV YOUTUBE_DL_SKIP_PYTHON_CHECK=1
 RUN npm install
+
+# Update yt-dlp to the latest version
+RUN pip3 install --upgrade yt-dlp
 COPY . .
 RUN npm run build
 
