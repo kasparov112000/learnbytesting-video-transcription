@@ -6,18 +6,24 @@ import { serviceConfigs } from '../../config/global.config';
 export class YouTubeDownloaderService {
   private tempDir: string;
   private cookiesPath: string | undefined;
+  private browserCookies: string | undefined;
 
   constructor() {
     this.tempDir = serviceConfigs.tempAudioDir;
     this.ensureTempDirExists();
 
-    // Check for cookies file
+    // Check for browser to extract cookies from
+    this.browserCookies = process.env.YOUTUBE_COOKIES_BROWSER || 'chrome';
+
+    // Check for cookies file as fallback
     const cookiesFile = process.env.YOUTUBE_COOKIES_FILE || '/etc/youtube-cookies/cookies.txt';
     if (fs.existsSync(cookiesFile)) {
       this.cookiesPath = cookiesFile;
       console.log(`YouTube cookies file found at: ${cookiesFile}`);
+    } else if (this.browserCookies) {
+      console.log(`Will attempt to use cookies from browser: ${this.browserCookies}`);
     } else {
-      console.log('No YouTube cookies file found, proceeding without authentication');
+      console.log('No YouTube cookies configured, proceeding without authentication');
     }
   }
 
@@ -64,12 +70,22 @@ export class YouTubeDownloaderService {
         dumpJson: true,
         noWarnings: true,
         noCheckCertificates: true,
-        preferFreeFormats: true
+        preferFreeFormats: true,
+        // Add user agent to avoid bot detection
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        // Add referer
+        referer: 'https://www.youtube.com/',
+        // Sleep interval to avoid rate limiting
+        sleepInterval: 1,
+        maxSleepInterval: 3
       };
 
       // Add cookies if available
       if (this.cookiesPath) {
         ytdlOptions.cookies = this.cookiesPath;
+      } else if (this.browserCookies && process.platform !== 'linux') {
+        // Use cookies from browser (only works on non-containerized environments)
+        ytdlOptions.cookiesFromBrowser = this.browserCookies;
       }
 
       const info: any = await youtubedl(url, ytdlOptions);
@@ -124,12 +140,22 @@ export class YouTubeDownloaderService {
         output: tempOutputPath,
         noWarnings: true,
         noCheckCertificates: true,
-        preferFreeFormats: true
+        preferFreeFormats: true,
+        // Add user agent to avoid bot detection
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        // Add referer
+        referer: 'https://www.youtube.com/',
+        // Sleep interval to avoid rate limiting
+        sleepInterval: 1,
+        maxSleepInterval: 3
       };
 
       // Add cookies if available
       if (this.cookiesPath) {
         ytdlOptions.cookies = this.cookiesPath;
+      } else if (this.browserCookies && process.platform !== 'linux') {
+        // Use cookies from browser (only works on non-containerized environments)
+        ytdlOptions.cookiesFromBrowser = this.browserCookies;
       }
 
       // Add ffmpeg location for Windows local development
