@@ -89,7 +89,8 @@ export class YouTubeDownloaderService {
         sleepInterval: 1,
         maxSleepInterval: 3,
         // Use different extraction method to bypass restrictions
-        extractorArgs: 'youtube:player_client=web',
+        // Try multiple clients in order of reliability
+        extractorArgs: 'youtube:player_client=ios,web,android',
         // Force IPv4
         forceIpv4: true
       };
@@ -121,6 +122,16 @@ export class YouTubeDownloaderService {
       };
     } catch (error: any) {
       console.error('Error getting video info:', error.message);
+
+      // Check if this is a restricted video
+      if (error.message.includes('Sign in to confirm')) {
+        throw new Error(
+          `This video is heavily restricted by YouTube and requires special authentication. ` +
+          `This often happens with age-restricted, region-locked, or copyright-protected content. ` +
+          `Please try a different video or ensure you're using fresh cookies from a logged-in session. ` +
+          `Original error: ${error.message}`
+        );
+      }
       throw error;
     }
   }
@@ -163,7 +174,8 @@ export class YouTubeDownloaderService {
         sleepInterval: 1,
         maxSleepInterval: 3,
         // Use different extraction method to bypass restrictions
-        extractorArgs: 'youtube:player_client=web',
+        // Try multiple clients in order of reliability
+        extractorArgs: 'youtube:player_client=ios,web,android',
         // Force IPv4
         forceIpv4: true
       };
