@@ -15,11 +15,21 @@ export class YouTubeDownloaderService {
     // Check for browser to extract cookies from
     this.browserCookies = process.env.YOUTUBE_COOKIES_BROWSER || 'chrome';
 
-    // Check for cookies file as fallback
-    const cookiesFile = process.env.YOUTUBE_COOKIES_FILE || '/etc/youtube-cookies/cookies.txt';
-    if (fs.existsSync(cookiesFile)) {
-      this.cookiesPath = cookiesFile;
-      console.log(`YouTube cookies file found at: ${cookiesFile}`);
+    // Check for cookies file and copy to writable location
+    const sourceCookiesFile = process.env.YOUTUBE_COOKIES_FILE || '/etc/youtube-cookies/cookies.txt';
+    if (fs.existsSync(sourceCookiesFile)) {
+      // Copy cookies to a writable location since ConfigMap mounts are read-only
+      const writableCookiesPath = path.join(this.tempDir, 'youtube-cookies.txt');
+      try {
+        fs.copyFileSync(sourceCookiesFile, writableCookiesPath);
+        // Make the file writable
+        fs.chmodSync(writableCookiesPath, 0o666);
+        this.cookiesPath = writableCookiesPath;
+        console.log(`YouTube cookies copied to writable location: ${writableCookiesPath}`);
+      } catch (error) {
+        console.error('Error copying cookies file:', error);
+        console.log('Proceeding without cookies authentication');
+      }
     } else if (this.browserCookies) {
       console.log(`Will attempt to use cookies from browser: ${this.browserCookies}`);
     } else {

@@ -82,7 +82,7 @@ spec:
               readOnly: true
             - name: youtube-cookies
               mountPath: /etc/youtube-cookies
-              readOnly: true
+              readOnly: false
           readinessProbe:
             httpGet:
               path: /health
