@@ -72,7 +72,7 @@ spec:
               value: {{ .Values.env.MAX_VIDEO_LENGTH_SECONDS | quote }}
           ports:
             - name: http
-              containerPort: 3000
+              containerPort: {{ .Values.service.port }}
               protocol: TCP
           volumeMounts:
             - name: google-credentials
@@ -81,9 +81,10 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 3000
-            initialDelaySeconds: 5
-            periodSeconds: 3
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
