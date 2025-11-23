@@ -5,10 +5,20 @@ import { serviceConfigs } from '../../config/global.config';
 
 export class YouTubeDownloaderService {
   private tempDir: string;
+  private cookiesPath: string | undefined;
 
   constructor() {
     this.tempDir = serviceConfigs.tempAudioDir;
     this.ensureTempDirExists();
+
+    // Check for cookies file
+    const cookiesFile = process.env.YOUTUBE_COOKIES_FILE || '/etc/youtube-cookies/cookies.txt';
+    if (fs.existsSync(cookiesFile)) {
+      this.cookiesPath = cookiesFile;
+      console.log(`YouTube cookies file found at: ${cookiesFile}`);
+    } else {
+      console.log('No YouTube cookies file found, proceeding without authentication');
+    }
   }
 
   /**
@@ -50,14 +60,19 @@ export class YouTubeDownloaderService {
       const videoId = this.extractVideoId(url);
 
       // Get video info using youtube-dl-exec
-      const info: any = await youtubedl(url, {
+      const ytdlOptions: any = {
         dumpJson: true,
         noWarnings: true,
-        callHome: false,
         noCheckCertificates: true,
-        preferFreeFormats: true,
-        youtubeSkipDashManifest: true
-      });
+        preferFreeFormats: true
+      };
+
+      // Add cookies if available
+      if (this.cookiesPath) {
+        ytdlOptions.cookies = this.cookiesPath;
+      }
+
+      const info: any = await youtubedl(url, ytdlOptions);
 
       const duration = Math.floor(info.duration || 0);
 
@@ -111,6 +126,11 @@ export class YouTubeDownloaderService {
         noCheckCertificates: true,
         preferFreeFormats: true
       };
+
+      // Add cookies if available
+      if (this.cookiesPath) {
+        ytdlOptions.cookies = this.cookiesPath;
+      }
 
       // Add ffmpeg location for Windows local development
       if (isWindows && !isDocker) {
