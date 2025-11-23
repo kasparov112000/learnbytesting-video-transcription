@@ -1,7 +1,4 @@
 import youtubedl from 'youtube-dl-exec';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-const execAsync = promisify(exec);
 import * as fs from 'fs';
 import * as path from 'path';
 import { serviceConfigs } from '../../config/global.config';
@@ -105,26 +102,7 @@ export class YouTubeDownloaderService {
         ytdlOptions.cookiesFromBrowser = this.browserCookies;
       }
 
-      let info: any;
-
-      try {
-        // First try with the bundled yt-dlp
-        info = await youtubedl(url, ytdlOptions);
-      } catch (error: any) {
-        console.log('Bundled yt-dlp failed, trying system yt-dlp...');
-
-        // Fallback to system yt-dlp if available
-        const cookiesArg = this.cookiesPath ? `--cookies "${this.cookiesPath}"` : '';
-        const command = `yt-dlp "${url}" --dump-json --no-warnings --extractor-args "youtube:player_client=web" ${cookiesArg}`;
-
-        try {
-          const { stdout } = await execAsync(command);
-          info = JSON.parse(stdout);
-        } catch (fallbackError: any) {
-          console.error('System yt-dlp also failed:', fallbackError.message);
-          throw error; // Throw original error
-        }
-      }
+      const info: any = await youtubedl(url, ytdlOptions);
 
       const duration = Math.floor(info.duration || 0);
 
