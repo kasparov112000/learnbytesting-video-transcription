@@ -87,7 +87,11 @@ export class YouTubeDownloaderService {
         referer: 'https://www.youtube.com/',
         // Sleep interval to avoid rate limiting
         sleepInterval: 1,
-        maxSleepInterval: 3
+        maxSleepInterval: 3,
+        // Use different extraction method to bypass restrictions
+        extractorArgs: 'youtube:player_client=android',
+        // Force IPv4
+        forceIpv4: true
       };
 
       // Add cookies if available
@@ -157,7 +161,11 @@ export class YouTubeDownloaderService {
         referer: 'https://www.youtube.com/',
         // Sleep interval to avoid rate limiting
         sleepInterval: 1,
-        maxSleepInterval: 3
+        maxSleepInterval: 3,
+        // Use different extraction method to bypass restrictions
+        extractorArgs: 'youtube:player_client=android',
+        // Force IPv4
+        forceIpv4: true
       };
 
       // Add cookies if available
