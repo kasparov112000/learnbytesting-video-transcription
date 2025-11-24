@@ -40,7 +40,11 @@ const serviceConfigs = {
   audioSampleRate: parseInt(process.env.AUDIO_SAMPLE_RATE || '16000'), // 16kHz for speech
 
   // Language Configuration
-  defaultLanguage: process.env.DEFAULT_LANGUAGE || 'en-US'
+  defaultLanguage: process.env.DEFAULT_LANGUAGE || 'en-US',
+
+  // YouTube Configuration (to bypass bot detection)
+  youtubeCookiesFile: process.env.YOUTUBE_COOKIES_FILE,
+  youtubeUserAgent: process.env.YOUTUBE_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };
 
 // App Dynamics Configuration

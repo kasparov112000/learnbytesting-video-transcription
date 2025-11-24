@@ -282,6 +282,24 @@ curl http://localhost:3016/transcription/transcript/TRANSCRIPT_ID
 
 ## Troubleshooting
 
+### YouTube Bot Detection Error
+
+```
+ERROR: [youtube] VIDEO_ID: Sign in to confirm you're not a bot
+```
+
+**Solution**: This is YouTube's anti-bot protection. You need to export cookies from a logged-in YouTube session.
+
+**📖 See [YOUTUBE_COOKIES_GUIDE.md](./YOUTUBE_COOKIES_GUIDE.md) for detailed instructions.**
+
+Quick fix:
+1. Install "Get cookies.txt LOCALLY" browser extension
+2. Login to YouTube
+3. Export cookies to `cookies.txt`
+4. Place file in project root
+5. Set `YOUTUBE_COOKIES_FILE=./cookies.txt` in `.env`
+6. Restart the service
+
 ### FFmpeg not found
 
 ```

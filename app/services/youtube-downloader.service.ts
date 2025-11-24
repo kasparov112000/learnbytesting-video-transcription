@@ -5,36 +5,10 @@ import { serviceConfigs } from '../../config/global.config';
 
 export class YouTubeDownloaderService {
   private tempDir: string;
-  private cookiesPath: string | undefined;
-  private browserCookies: string | undefined;
 
   constructor() {
     this.tempDir = serviceConfigs.tempAudioDir;
     this.ensureTempDirExists();
-
-    // Check for browser to extract cookies from
-    this.browserCookies = process.env.YOUTUBE_COOKIES_BROWSER || 'chrome';
-
-    // Check for cookies file and copy to writable location
-    const sourceCookiesFile = process.env.YOUTUBE_COOKIES_FILE || '/etc/youtube-cookies/cookies.txt';
-    if (fs.existsSync(sourceCookiesFile)) {
-      // Copy cookies to a writable location since ConfigMap mounts are read-only
-      const writableCookiesPath = path.join(this.tempDir, 'youtube-cookies.txt');
-      try {
-        fs.copyFileSync(sourceCookiesFile, writableCookiesPath);
-        // Make the file writable
-        fs.chmodSync(writableCookiesPath, 0o666);
-        this.cookiesPath = writableCookiesPath;
-        console.log(`YouTube cookies copied to writable location: ${writableCookiesPath}`);
-      } catch (error) {
-        console.error('Error copying cookies file:', error);
-        console.log('Proceeding without cookies authentication');
-      }
-    } else if (this.browserCookies) {
-      console.log(`Will attempt to use cookies from browser: ${this.browserCookies}`);
-    } else {
-      console.log('No YouTube cookies configured, proceeding without authentication');
-    }
   }
 
   /**
@@ -64,6 +38,33 @@ export class YouTubeDownloaderService {
   }
 
   /**
+   * Get common youtube-dl options with cookie and anti-bot configuration
+   */
+  private getCommonYtdlOptions(): any {
+    const options: any = {
+      noWarnings: true,
+      callHome: false,
+      noCheckCertificates: true,
+      preferFreeFormats: true,
+      youtubeSkipDashManifest: true,
+      addHeader: [
+        `User-Agent:${serviceConfigs.youtubeUserAgent}`
+      ]
+    };
+
+    // Add cookies file if configured and exists
+    if (serviceConfigs.youtubeCookiesFile && fs.existsSync(serviceConfigs.youtubeCookiesFile)) {
+      options.cookies = serviceConfigs.youtubeCookiesFile;
+      console.log(`Using YouTube cookies from: ${serviceConfigs.youtubeCookiesFile}`);
+    } else if (serviceConfigs.youtubeCookiesFile) {
+      console.warn(`YouTube cookies file not found: ${serviceConfigs.youtubeCookiesFile}`);
+      console.warn('Proceeding without cookies - may encounter bot detection errors');
+    }
+
+    return options;
+  }
+
+  /**
    * Get video information
    */
   async getVideoInfo(url: string): Promise<{
@@ -75,42 +76,13 @@ export class YouTubeDownloaderService {
     try {
       const videoId = this.extractVideoId(url);
 
-      // Get video info using youtube-dl-exec
-      const ytdlOptions: any = {
-        dumpJson: true,
-        noWarnings: true,
-        noCheckCertificates: true,
-        preferFreeFormats: true,
-        // Add user agent to avoid bot detection
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        // Add referer
-        referer: 'https://www.youtube.com/',
-        // Sleep interval to avoid rate limiting
-        sleepInterval: 1,
-        maxSleepInterval: 3,
-        // Use different extraction method to bypass restrictions
-        // Try multiple clients in order of reliability
-        extractorArgs: 'youtube:player_client=ios,web,android',
-        // Force IPv4
-        forceIpv4: true
+      // Get video info using youtube-dl-exec with anti-bot configuration
+      const options = {
+        ...this.getCommonYtdlOptions(),
+        dumpJson: true
       };
 
-      let info: any;
-
-      try {
-        // First try without cookies - many videos work without authentication
-        console.log('Attempting to fetch video info without cookies...');
-        info = await youtubedl(url, ytdlOptions);
-      } catch (error: any) {
-        // If it fails, try with cookies
-        if (this.cookiesPath && error.message.includes('Sign in to confirm')) {
-          console.log('Video requires authentication, trying with cookies...');
-          ytdlOptions.cookies = this.cookiesPath;
-          info = await youtubedl(url, ytdlOptions);
-        } else {
-          throw error;
-        }
-      }
+      const info: any = await youtubedl(url, options);
 
       const duration = Math.floor(info.duration || 0);
 
@@ -129,16 +101,6 @@ export class YouTubeDownloaderService {
       };
     } catch (error: any) {
       console.error('Error getting video info:', error.message);
-
-      // Check if this is a restricted video
-      if (error.message.includes('Sign in to confirm')) {
-        throw new Error(
-          `This video is heavily restricted by YouTube and requires special authentication. ` +
-          `This often happens with age-restricted, region-locked, or copyright-protected content. ` +
-          `Please try a different video or ensure you're using fresh cookies from a logged-in session. ` +
-          `Original error: ${error.message}`
-        );
-      }
       throw error;
     }
   }
@@ -166,25 +128,13 @@ export class YouTubeDownloaderService {
       // Configure FFmpeg location for Windows
       const isWindows = process.platform === 'win32';
       const isDocker = process.env.ENV_NAME === 'deployed' || fs.existsSync('/.dockerenv');
+
+      // Start with common options (includes cookies and headers)
       const ytdlOptions: any = {
+        ...this.getCommonYtdlOptions(),
         extractAudio: true,
         audioFormat: 'm4a',
-        output: tempOutputPath,
-        noWarnings: true,
-        noCheckCertificates: true,
-        preferFreeFormats: true,
-        // Add user agent to avoid bot detection
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        // Add referer
-        referer: 'https://www.youtube.com/',
-        // Sleep interval to avoid rate limiting
-        sleepInterval: 1,
-        maxSleepInterval: 3,
-        // Use different extraction method to bypass restrictions
-        // Try multiple clients in order of reliability
-        extractorArgs: 'youtube:player_client=ios,web,android',
-        // Force IPv4
-        forceIpv4: true
+        output: tempOutputPath
       };
 
       // Add ffmpeg location for Windows local development
@@ -197,20 +147,7 @@ export class YouTubeDownloaderService {
         }
       }
 
-      try {
-        // First try without cookies
-        console.log('Attempting to download audio without cookies...');
-        await youtubedl(url, ytdlOptions);
-      } catch (error: any) {
-        // If it fails, try with cookies
-        if (this.cookiesPath && error.message.includes('Sign in to confirm')) {
-          console.log('Download requires authentication, trying with cookies...');
-          ytdlOptions.cookies = this.cookiesPath;
-          await youtubedl(url, ytdlOptions);
-        } else {
-          throw error;
-        }
-      }
+      await youtubedl(url, ytdlOptions);
 
       console.log(`Audio download completed: ${outputPath}`);
       return outputPath;
