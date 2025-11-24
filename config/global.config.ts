@@ -43,6 +43,7 @@ const serviceConfigs = {
   defaultLanguage: process.env.DEFAULT_LANGUAGE || 'en-US',
 
   // YouTube Configuration (to bypass bot detection)
+  youtubeCookiesBrowser: process.env.YOUTUBE_COOKIES_BROWSER, // e.g., 'chrome', 'firefox', 'edge'
   youtubeCookiesFile: process.env.YOUTUBE_COOKIES_FILE,
   youtubeUserAgent: process.env.YOUTUBE_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 };

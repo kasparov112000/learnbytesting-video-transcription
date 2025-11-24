@@ -43,22 +43,23 @@ export class YouTubeDownloaderService {
   private getCommonYtdlOptions(): any {
     const options: any = {
       noWarnings: true,
-      callHome: false,
       noCheckCertificates: true,
       preferFreeFormats: true,
-      youtubeSkipDashManifest: true,
       addHeader: [
         `User-Agent:${serviceConfigs.youtubeUserAgent}`
       ]
     };
 
-    // Add cookies file if configured and exists
-    if (serviceConfigs.youtubeCookiesFile && fs.existsSync(serviceConfigs.youtubeCookiesFile)) {
+    // Add cookies - prioritize cookies-from-browser for convenience
+    if (serviceConfigs.youtubeCookiesBrowser) {
+      options.cookiesFromBrowser = serviceConfigs.youtubeCookiesBrowser;
+      console.log(`Using YouTube cookies from browser: ${serviceConfigs.youtubeCookiesBrowser}`);
+    } else if (serviceConfigs.youtubeCookiesFile && fs.existsSync(serviceConfigs.youtubeCookiesFile)) {
       options.cookies = serviceConfigs.youtubeCookiesFile;
-      console.log(`Using YouTube cookies from: ${serviceConfigs.youtubeCookiesFile}`);
-    } else if (serviceConfigs.youtubeCookiesFile) {
-      console.warn(`YouTube cookies file not found: ${serviceConfigs.youtubeCookiesFile}`);
-      console.warn('Proceeding without cookies - may encounter bot detection errors');
+      console.log(`Using YouTube cookies from file: ${serviceConfigs.youtubeCookiesFile}`);
+    } else {
+      console.warn('No YouTube cookies configured - may encounter bot detection errors');
+      console.warn('Configure YOUTUBE_COOKIES_BROWSER (e.g., "chrome") or YOUTUBE_COOKIES_FILE in environment');
     }
 
     return options;

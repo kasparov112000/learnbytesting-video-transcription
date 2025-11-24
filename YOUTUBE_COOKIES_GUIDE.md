@@ -11,11 +11,64 @@ This helps protect our community.
 
 This happens because YouTube's anti-bot detection blocks automated download tools like yt-dlp. The solution is to use cookies from a logged-in YouTube session.
 
-## The Solution: Export YouTube Cookies
+## The Solutions
 
-By providing cookies from your logged-in YouTube account, the video transcription service can bypass bot detection and access videos as if you were browsing normally.
+There are **two methods** to provide YouTube cookies. Choose the one that works best for you:
+
+### **Method 1: Browser Cookie Extraction** (✅ Recommended - Easier!)
+Let yt-dlp automatically extract cookies from your browser - no file exports needed!
+
+### **Method 2: Cookie File Export** (Alternative)
+Manually export cookies to a file using a browser extension.
 
 ---
+
+## Method 1: Browser Cookie Extraction (Recommended)
+
+This is the **easiest method** - just set an environment variable and you're done!
+
+### Prerequisites
+- You must be **logged in to YouTube** in the browser you specify
+- The browser must be installed on the same machine where the service runs
+
+### Configuration
+
+1. **Login to YouTube** in your browser (Chrome, Firefox, Edge, etc.)
+
+2. **Set the environment variable** in your `.env` file:
+   ```env
+   YOUTUBE_COOKIES_BROWSER=chrome
+   ```
+
+   Supported browsers:
+   - `chrome` - Google Chrome
+   - `firefox` - Mozilla Firefox
+   - `edge` - Microsoft Edge
+   - `safari` - Safari (macOS)
+   - `brave` - Brave Browser
+   - `opera` - Opera
+   - `vivaldi` - Vivaldi
+
+3. **Restart the service** to apply changes
+
+### How It Works
+
+The service will automatically extract cookies from your browser's cookie storage every time it downloads a video. No manual exports needed!
+
+### Limitations
+
+- Works best for **local development** and **single-machine deployments**
+- For containerized/production environments, use Method 2 (cookie file)
+- Browser must be installed on the server
+
+---
+
+## Method 2: Cookie File Export (Alternative)
+
+Use this method if:
+- You're deploying to a container/server without a browser
+- Method 1 doesn't work for your environment
+- You prefer manual control over cookies
 
 ## Step-by-Step Guide
 
