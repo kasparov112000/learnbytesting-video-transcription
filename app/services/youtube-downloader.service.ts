@@ -95,15 +95,22 @@ export class YouTubeDownloaderService {
         forceIpv4: true
       };
 
-      // Add cookies if available
-      if (this.cookiesPath) {
-        ytdlOptions.cookies = this.cookiesPath;
-      } else if (this.browserCookies && process.platform !== 'linux') {
-        // Use cookies from browser (only works on non-containerized environments)
-        ytdlOptions.cookiesFromBrowser = this.browserCookies;
-      }
+      let info: any;
 
-      const info: any = await youtubedl(url, ytdlOptions);
+      try {
+        // First try without cookies - many videos work without authentication
+        console.log('Attempting to fetch video info without cookies...');
+        info = await youtubedl(url, ytdlOptions);
+      } catch (error: any) {
+        // If it fails, try with cookies
+        if (this.cookiesPath && error.message.includes('Sign in to confirm')) {
+          console.log('Video requires authentication, trying with cookies...');
+          ytdlOptions.cookies = this.cookiesPath;
+          info = await youtubedl(url, ytdlOptions);
+        } else {
+          throw error;
+        }
+      }
 
       const duration = Math.floor(info.duration || 0);
 
@@ -180,14 +187,6 @@ export class YouTubeDownloaderService {
         forceIpv4: true
       };
 
-      // Add cookies if available
-      if (this.cookiesPath) {
-        ytdlOptions.cookies = this.cookiesPath;
-      } else if (this.browserCookies && process.platform !== 'linux') {
-        // Use cookies from browser (only works on non-containerized environments)
-        ytdlOptions.cookiesFromBrowser = this.browserCookies;
-      }
-
       // Add ffmpeg location for Windows local development
       if (isWindows && !isDocker) {
         const windowsPath = 'C:\\Users\\Renato\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg.Essentials_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.0-essentials_build\\bin';
@@ -198,7 +197,20 @@ export class YouTubeDownloaderService {
         }
       }
 
-      await youtubedl(url, ytdlOptions);
+      try {
+        // First try without cookies
+        console.log('Attempting to download audio without cookies...');
+        await youtubedl(url, ytdlOptions);
+      } catch (error: any) {
+        // If it fails, try with cookies
+        if (this.cookiesPath && error.message.includes('Sign in to confirm')) {
+          console.log('Download requires authentication, trying with cookies...');
+          ytdlOptions.cookies = this.cookiesPath;
+          await youtubedl(url, ytdlOptions);
+        } else {
+          throw error;
+        }
+      }
 
       console.log(`Audio download completed: ${outputPath}`);
       return outputPath;
