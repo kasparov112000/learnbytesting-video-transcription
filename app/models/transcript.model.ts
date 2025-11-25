@@ -11,7 +11,7 @@ export interface ITranscript extends Document {
   progress: number;
   errorMessage?: string;
   questionId?: mongoose.Types.ObjectId;
-  provider: 'google' | 'openai' | 'self-hosted' | 'mock';
+  provider: 'google' | 'openai' | 'self-hosted' | 'mock' | 'youtube-api-captions';
   audioFilePath?: string;
   createdDate: Date;
   completedDate?: Date;
@@ -67,7 +67,7 @@ const TranscriptSchema: Schema = new Schema({
   },
   provider: {
     type: String,
-    enum: ['google', 'openai', 'self-hosted', 'mock'],
+    enum: ['google', 'openai', 'self-hosted', 'mock', 'youtube-api-captions'],
     required: true
   },
   audioFilePath: {
