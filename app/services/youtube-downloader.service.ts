@@ -45,9 +45,18 @@ export class YouTubeDownloaderService {
       noWarnings: true,
       noCheckCertificates: true,
       preferFreeFormats: true,
+      // Enhanced anti-bot detection headers
       addHeader: [
-        `User-Agent:${serviceConfigs.youtubeUserAgent}`
-      ]
+        `User-Agent:${serviceConfigs.youtubeUserAgent}`,
+        'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language:en-us,en;q=0.5',
+        'Sec-Fetch-Mode:navigate'
+      ],
+      // Use extractor args to try different player clients
+      extractorArgs: 'youtube:player_client=android,web',
+      // Sleep between requests to appear more human
+      sleepInterval: 1,
+      maxSleepInterval: 3
     };
 
     // Add cookies - prioritize cookies-from-browser for convenience
