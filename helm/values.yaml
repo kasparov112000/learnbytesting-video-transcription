@@ -113,3 +113,6 @@ env:
 
   # Language Configuration
   DEFAULT_LANGUAGE: "en-US"
+
+  # YouTube Data API v3 Configuration (to bypass bot detection)
+  YOUTUBE_API_KEY: "AIzaSyAUYmfrdp46KmWRAuxucECDk7zDaaTCFo0"

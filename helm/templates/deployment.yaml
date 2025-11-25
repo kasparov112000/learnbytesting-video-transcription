@@ -72,6 +72,8 @@ spec:
               value: {{ .Values.env.DEFAULT_LANGUAGE | quote }}
             - name: MAX_VIDEO_LENGTH_SECONDS
               value: {{ .Values.env.MAX_VIDEO_LENGTH_SECONDS | quote }}
+            - name: YOUTUBE_API_KEY
+              value: {{ .Values.env.YOUTUBE_API_KEY | quote }}
             - name: YOUTUBE_COOKIES_FILE
               value: "/etc/youtube/cookies.txt"
           ports:
