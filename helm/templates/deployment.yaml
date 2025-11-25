@@ -72,6 +72,8 @@ spec:
               value: {{ .Values.env.DEFAULT_LANGUAGE | quote }}
             - name: MAX_VIDEO_LENGTH_SECONDS
               value: {{ .Values.env.MAX_VIDEO_LENGTH_SECONDS | quote }}
+            - name: YOUTUBE_COOKIES_FILE
+              value: "/etc/youtube/cookies.txt"
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
@@ -81,8 +83,8 @@ spec:
               mountPath: /etc/google
               readOnly: true
             - name: youtube-cookies
-              mountPath: /etc/youtube-cookies
-              readOnly: false
+              mountPath: /etc/youtube
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -100,8 +102,8 @@ spec:
               - key: credentials.json
                 path: credentials.json
         - name: youtube-cookies
-          configMap:
-            name: youtube-cookies
+          secret:
+            secretName: youtube-cookies
             optional: true
             items:
               - key: cookies.txt
