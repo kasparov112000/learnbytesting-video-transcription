@@ -99,6 +99,17 @@ export class TranscriptionService {
           duration: 300, // 5 minutes mock duration
           thumbnail: 'https://via.placeholder.com/480x360?text=Mock+Video'
         };
+      } else if (this.youtubeApi) {
+        // Try YouTube API first (no bot detection!)
+        console.log('🎬 Using YouTube Data API v3 to get video info...');
+        try {
+          videoInfo = await this.youtubeApi.getVideoInfo(youtubeUrl);
+          console.log(`✓ Video info retrieved from YouTube API`);
+        } catch (error: any) {
+          console.warn(`YouTube API failed: ${error.message}`);
+          console.log('Falling back to yt-dlp for video info...');
+          videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
+        }
       } else {
         videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
       }
