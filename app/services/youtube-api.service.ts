@@ -111,44 +111,32 @@ export class YouTubeAPIService {
       const videoId = this.extractVideoId(url);
       console.log(`Attempting to download captions for video: ${videoId}`);
 
-      // List available captions
-      const captionsResponse = await this.youtube.captions.list({
-        part: ['snippet'],
-        videoId: videoId
+      // Try to fetch captions using the timedtext API (doesn't require OAuth)
+      // This is a public endpoint that YouTube uses for embedded players
+      const timedtextUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
+
+      console.log(`Fetching captions from timedtext API...`);
+      const response = await axios.get(timedtextUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 10000
       });
 
-      if (!captionsResponse.data.items || captionsResponse.data.items.length === 0) {
+      if (!response.data || response.data.length === 0) {
         console.log('No captions available for this video');
         return null;
       }
 
-      // Prefer English captions, fallback to first available
-      let caption = captionsResponse.data.items.find(
-        c => c.snippet?.language === 'en' || c.snippet?.language === 'en-US'
-      );
-
-      if (!caption) {
-        caption = captionsResponse.data.items[0];
-      }
-
-      console.log(`Found caption in language: ${caption.snippet?.language}`);
-
-      // Download the caption track
-      const captionId = caption.id!;
-      const downloadResponse = await this.youtube.captions.download({
-        id: captionId,
-        tfmt: 'srt' // SubRip format - includes timestamps
-      });
-
-      // The response contains the caption text
-      const captionText = downloadResponse.data as string;
+      // Parse the XML/JSON caption data
+      const captionText = this.parseTimedText(response.data);
 
       if (!captionText || captionText.trim().length === 0) {
-        console.log('Caption file is empty');
+        console.log('Caption parsing resulted in empty text');
         return null;
       }
 
-      console.log(`Successfully downloaded captions (${captionText.length} characters)`);
+      console.log(`✓ Successfully downloaded captions (${captionText.length} characters)`);
       return captionText;
     } catch (error: any) {
       console.error('Error downloading captions:', error.message);
@@ -160,6 +148,57 @@ export class YouTubeAPIService {
 
       return null;
     }
+  }
+
+  /**
+   * Parse YouTube timedtext format (XML) to plain text
+   */
+  private parseTimedText(data: string): string {
+    try {
+      // Remove XML tags and extract text content
+      // The timedtext format has <text> tags with the caption content
+      const textMatches = data.match(/<text[^>]*>([^<]*)<\/text>/g);
+
+      if (!textMatches) {
+        return '';
+      }
+
+      const textLines: string[] = [];
+      for (const match of textMatches) {
+        // Extract text between tags and decode HTML entities
+        const text = match.replace(/<text[^>]*>([^<]*)<\/text>/, '$1');
+        const decoded = this.decodeHTMLEntities(text);
+        if (decoded.trim()) {
+          textLines.push(decoded.trim());
+        }
+      }
+
+      return textLines.join(' ');
+    } catch (error: any) {
+      console.error('Error parsing timedtext:', error.message);
+      return '';
+    }
+  }
+
+  /**
+   * Decode HTML entities in caption text
+   */
+  private decodeHTMLEntities(text: string): string {
+    const entities: Record<string, string> = {
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&#39;': "'",
+      '&nbsp;': ' '
+    };
+
+    let decoded = text;
+    for (const [entity, char] of Object.entries(entities)) {
+      decoded = decoded.replace(new RegExp(entity, 'g'), char);
+    }
+
+    return decoded;
   }
 
   /**
