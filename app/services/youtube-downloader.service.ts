@@ -55,8 +55,25 @@ export class YouTubeDownloaderService {
       options.cookiesFromBrowser = serviceConfigs.youtubeCookiesBrowser;
       console.log(`Using YouTube cookies from browser: ${serviceConfigs.youtubeCookiesBrowser}`);
     } else if (serviceConfigs.youtubeCookiesFile && fs.existsSync(serviceConfigs.youtubeCookiesFile)) {
-      options.cookies = serviceConfigs.youtubeCookiesFile;
-      console.log(`Using YouTube cookies from file: ${serviceConfigs.youtubeCookiesFile}`);
+      // Copy cookies to writable location to avoid read-only file system errors
+      // Kubernetes Secret volumes are read-only, but yt-dlp tries to update cookies
+      const writableCookiesPath = path.join(serviceConfigs.tempAudioDir, 'cookies.txt');
+
+      try {
+        // Ensure temp directory exists
+        if (!fs.existsSync(serviceConfigs.tempAudioDir)) {
+          fs.mkdirSync(serviceConfigs.tempAudioDir, { recursive: true });
+        }
+
+        // Copy cookies to writable location
+        fs.copyFileSync(serviceConfigs.youtubeCookiesFile, writableCookiesPath);
+        options.cookies = writableCookiesPath;
+        console.log(`Using YouTube cookies from file: ${serviceConfigs.youtubeCookiesFile} (copied to ${writableCookiesPath})`);
+      } catch (error: any) {
+        console.warn(`Failed to copy cookies file: ${error.message}`);
+        console.warn('Attempting to use read-only cookies file directly');
+        options.cookies = serviceConfigs.youtubeCookiesFile;
+      }
     } else {
       console.warn('No YouTube cookies configured - may encounter bot detection errors');
       console.warn('Configure YOUTUBE_COOKIES_BROWSER (e.g., "chrome") or YOUTUBE_COOKIES_FILE in environment');
