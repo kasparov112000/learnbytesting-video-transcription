@@ -1,5 +1,5 @@
 import { Transcript, ITranscript } from '../models/transcript.model';
-import { YouTubeDownloaderService } from './youtube-downloader.service';
+import { PythonYouTubeDownloaderService } from './python-youtube-downloader.service';
 import { YouTubeAPIService } from './youtube-api.service';
 import { AudioConverterService } from './audio-converter.service';
 import { GoogleSpeechService } from './google-speech.service';
@@ -10,7 +10,7 @@ import { serviceConfigs } from '../../config/global.config';
 import mongoose from 'mongoose';
 
 export class TranscriptionService {
-  private youtubeDownloader: YouTubeDownloaderService;
+  private youtubeDownloader: PythonYouTubeDownloaderService;
   private youtubeApi: YouTubeAPIService | null = null;
   private audioConverter: AudioConverterService;
   private googleSpeech: GoogleSpeechService | null = null;
@@ -19,7 +19,7 @@ export class TranscriptionService {
   private mockTranscription: MockTranscriptionService | null = null;
 
   constructor() {
-    this.youtubeDownloader = new YouTubeDownloaderService();
+    this.youtubeDownloader = new PythonYouTubeDownloaderService();
     this.audioConverter = new AudioConverterService();
 
     // Initialize YouTube API service if API key is configured

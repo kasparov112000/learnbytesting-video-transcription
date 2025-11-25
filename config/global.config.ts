@@ -47,6 +47,9 @@ const serviceConfigs = {
   youtubeCookiesFile: process.env.YOUTUBE_COOKIES_FILE,
   youtubeUserAgent: process.env.YOUTUBE_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   youtubeApiKey: process.env.YOUTUBE_API_KEY, // YouTube Data API v3 key for caption fetching
+
+  // Python YouTube Downloader Service (dedicated yt-dlp microservice)
+  pythonDownloaderUrl: process.env.PYTHON_DOWNLOADER_URL || 'http://localhost:3017',
 };
 
 // App Dynamics Configuration
