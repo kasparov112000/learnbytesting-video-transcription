@@ -1,5 +1,6 @@
 import { Transcript, ITranscript } from '../models/transcript.model';
 import { YouTubeDownloaderService } from './youtube-downloader.service';
+import { YouTubeAPIService } from './youtube-api.service';
 import { AudioConverterService } from './audio-converter.service';
 import { GoogleSpeechService } from './google-speech.service';
 import { OpenAIWhisperService } from './openai-whisper.service';
@@ -10,6 +11,7 @@ import mongoose from 'mongoose';
 
 export class TranscriptionService {
   private youtubeDownloader: YouTubeDownloaderService;
+  private youtubeApi: YouTubeAPIService | null = null;
   private audioConverter: AudioConverterService;
   private googleSpeech: GoogleSpeechService | null = null;
   private openaiWhisper: OpenAIWhisperService | null = null;
@@ -19,6 +21,14 @@ export class TranscriptionService {
   constructor() {
     this.youtubeDownloader = new YouTubeDownloaderService();
     this.audioConverter = new AudioConverterService();
+
+    // Initialize YouTube API service if API key is configured
+    if (serviceConfigs.youtubeApiKey) {
+      console.log('✓ YouTube Data API v3 enabled - will try captions first');
+      this.youtubeApi = new YouTubeAPIService();
+    } else {
+      console.log('⚠️  YouTube Data API v3 not configured - will use audio download only');
+    }
 
     // Initialize the appropriate transcription provider
     this.initializeProviders();
@@ -166,6 +176,37 @@ export class TranscriptionService {
 
       // Check if we're using mock transcription (skip download for faster testing)
       const useMock = serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock';
+
+      // Try to get captions from YouTube API first (fastest and cheapest!)
+      let captionText: string | null = null;
+      if (!useMock && this.youtubeApi) {
+        console.log('🎬 Step 1: Trying to fetch captions from YouTube API...');
+        captionText = await this.youtubeApi.downloadCaptions(transcript.youtubeUrl);
+
+        if (captionText) {
+          console.log('✓ Captions found! Converting SRT to plain text...');
+          const plainText = this.youtubeApi.convertSRTToPlainText(captionText);
+
+          if (plainText && plainText.length > 0) {
+            // We have captions! Save and complete
+            const wordCount = plainText.split(/\s+/).length;
+            transcript.transcript = plainText;
+            transcript.wordCount = wordCount;
+            transcript.status = 'completed';
+            transcript.progress = 100;
+            transcript.completedDate = new Date();
+            transcript.provider = 'youtube-api-captions';
+            await transcript.save();
+
+            console.log(`✓ Transcription completed using captions: ${transcriptId}`);
+            console.log(`  Words: ${wordCount}`);
+            console.log(`  Length: ${plainText.length} characters`);
+            return; // Early return - no need to download audio!
+          }
+        } else {
+          console.log('⚠️  No captions available - falling back to audio download');
+        }
+      }
 
       if (useMock) {
         console.log('🎭 MOCK MODE: Skipping YouTube download and audio conversion');
