@@ -116,3 +116,6 @@ env:
 
   # YouTube Data API v3 Configuration (to bypass bot detection)
   YOUTUBE_API_KEY: "AIzaSyAUYmfrdp46KmWRAuxucECDk7zDaaTCFo0"
+
+  # Python YouTube Downloader Service URL (in-cluster)
+  PYTHON_DOWNLOADER_URL: "http://youtube-downloader:3017"

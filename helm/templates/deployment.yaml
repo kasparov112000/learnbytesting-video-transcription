@@ -76,6 +76,8 @@ spec:
               value: {{ .Values.env.YOUTUBE_API_KEY | quote }}
             - name: YOUTUBE_COOKIES_FILE
               value: "/etc/youtube/cookies.txt"
+            - name: PYTHON_DOWNLOADER_URL
+              value: {{ .Values.env.PYTHON_DOWNLOADER_URL | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
