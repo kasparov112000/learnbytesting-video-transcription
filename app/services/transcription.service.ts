@@ -280,6 +280,9 @@ export class TranscriptionService {
       console.log(`  Words: ${wordCount}`);
       console.log(`  Length: ${transcriptText.length} characters`);
 
+      // Auto-create a question with the transcript (no chess moves - user will add later)
+      await this.autoCreateQuestion(transcript);
+
     } catch (error: any) {
       console.error(`✗ Transcription failed: ${transcriptId}`, error);
 
@@ -360,5 +363,80 @@ export class TranscriptionService {
    */
   cleanupTempFiles(): void {
     this.youtubeDownloader.cleanupOldFiles();
+  }
+
+  /**
+   * Auto-create a question with the transcript (no chess moves)
+   * This is called when transcription completes to automatically create a question
+   * that the user can later add chess moves to.
+   */
+  private async autoCreateQuestion(transcript: ITranscript): Promise<void> {
+    try {
+      console.log(`📝 Auto-creating question for transcript: ${transcript._id}`);
+      console.log(`  Video: ${transcript.videoTitle}`);
+      console.log(`  Words: ${transcript.wordCount}`);
+
+      // Build the question payload - a simple question with just the transcript
+      const questionPayload = {
+        name: transcript.videoTitle || 'Video Transcript',
+        questionText: `Video transcript from: ${transcript.videoTitle}`,
+        videoTranscript: transcript.transcript,
+        youtubeUrl: transcript.youtubeUrl,
+        videoId: transcript.videoId,
+        transcriptId: transcript._id?.toString(),
+        // Default category for chess - user can change later
+        category: [{
+          _id: 'chess-openings',
+          name: 'Chess Openings',
+          displayName: 'Chess > Chess Openings'
+        }],
+        // Empty answers - user will add chess moves later
+        answers: [{
+          answerText: '',
+          isCorrect: true,
+          moves: [],
+          initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+          initialPgn: '',
+          solutionPgn: ''
+        }],
+        createdDate: new Date(),
+        createdFrom: 'auto-transcription',
+        status: 'transcript-only' // Mark as needing chess moves
+      };
+
+      // Call the questions service directly
+      const questionsUrl = `${serviceConfigs.questionsServiceUrl}/questions`;
+      console.log(`  Calling questions service: POST ${questionsUrl}`);
+
+      const axios = require('axios');
+      const response = await axios.post(questionsUrl, questionPayload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000 // 30 second timeout
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        const questionId = response.data?._id || response.data?.id;
+        console.log(`✅ Question created successfully: ${questionId}`);
+
+        // Update transcript with the linked question ID
+        transcript.questionId = new mongoose.Types.ObjectId(questionId);
+        await transcript.save();
+        console.log(`  Linked question ${questionId} to transcript ${transcript._id}`);
+      } else {
+        console.error(`❌ Failed to create question: HTTP ${response.status}`);
+        console.error('  Response:', response.data);
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Error auto-creating question:`, error.message);
+      if (error.response) {
+        console.error('  Status:', error.response.status);
+        console.error('  Data:', error.response.data);
+      }
+      // Don't throw - we don't want to fail the transcription just because question creation failed
+      // The transcript is still saved and the user can create a question manually
+    }
   }
 }

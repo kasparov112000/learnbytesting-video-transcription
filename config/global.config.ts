@@ -1,6 +1,6 @@
 const ENV_NAME = process.env.ENV_NAME || 'LOCAL';
 const msport = 3016;
-const { version: appVersion, name: appName } = require('../package.json');
+const { version: appVersion, name: appName } = require('../../package.json');
 
 const serviceConfigs = {
   port: msport,
@@ -50,6 +50,9 @@ const serviceConfigs = {
 
   // Python YouTube Downloader Service (dedicated yt-dlp microservice)
   pythonDownloaderUrl: process.env.PYTHON_DOWNLOADER_URL || 'http://localhost:3017',
+
+  // Questions Service (for auto-creating questions from transcripts)
+  questionsServiceUrl: process.env.QUESTIONS_SERVICE_URL || (process.env.ENV_NAME === 'LOCAL' ? 'http://localhost:3011' : 'http://questions:3011'),
 };
 
 // App Dynamics Configuration

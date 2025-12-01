@@ -71,7 +71,10 @@ autoscaling:
 
 nodeSelector: {}
 
-tolerations: []
+tolerations:
+  - key: "node.kubernetes.io/memory-pressure"
+    operator: "Exists"
+    effect: "NoSchedule"
 
 affinity: {}
 

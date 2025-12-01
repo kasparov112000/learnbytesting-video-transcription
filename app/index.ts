@@ -1,8 +1,8 @@
-import { Server } from './server';
+// Load environment variables BEFORE any other imports
 import dotenv from 'dotenv';
-
-// Load environment variables
 dotenv.config();
+
+import { Server } from './server';
 
 const server = new Server();
 
