@@ -290,6 +290,39 @@ export default function (app: any, express: any) {
   });
 
   /**
+   * POST /transcription/:id/reset
+   * Reset a failed/completed transcript back to pending_download
+   * Used to retry transcription processing
+   */
+  router.post('/transcription/:id/reset', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+
+      console.log('POST /transcription/:id/reset');
+      console.log('Transcript ID:', id);
+
+      const result = await transcriptionService.resetTranscript(id);
+
+      if (!result.success) {
+        return res.status(404).json({
+          error: result.error || 'Transcript not found'
+        });
+      }
+
+      res.status(200).json({
+        message: 'Transcript reset to pending_download',
+        transcriptionId: id
+      });
+
+    } catch (error: any) {
+      console.error('Error resetting transcript:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to reset transcript'
+      });
+    }
+  });
+
+  /**
    * DELETE /transcription/:id
    * Delete a transcript
    */

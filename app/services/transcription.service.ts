@@ -414,6 +414,36 @@ export class TranscriptionService {
   }
 
   /**
+   * Reset a transcript back to pending_download status
+   * Used to retry transcription processing
+   */
+  async resetTranscript(transcriptId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`Resetting transcript ${transcriptId} to pending_download`);
+
+      const transcript = await Transcript.findById(transcriptId);
+
+      if (!transcript) {
+        return { success: false, error: 'Transcript not found' };
+      }
+
+      // Reset the transcript
+      transcript.status = 'pending_download';
+      transcript.progress = 0;
+      transcript.errorMessage = '';
+      transcript.audioFilePath = undefined;
+      await transcript.save();
+
+      console.log(`Transcript ${transcriptId} reset successfully`);
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('Error resetting transcript:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Process a transcript with provided audio file
    * Called when audio file is available from android-sync
    */
