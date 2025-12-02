@@ -251,19 +251,23 @@ export default function (app: any, express: any) {
    *
    * Request body:
    * {
-   *   "audioFilePath": "/path/to/audio/file.m4a"
+   *   "audioFilePath": "/path/to/audio/file.m4a",  // Local file path (for local dev)
+   *   "audioStreamUrl": "http://android-sync:80/stream-file/xxx",  // Stream URL (for K8s)
+   *   "fileId": "mongodb_file_id"  // Optional file ID
    * }
    */
   router.post('/transcription/process/:id', async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      const { audioFilePath } = req.body;
+      const { audioFilePath, audioStreamUrl, fileId } = req.body;
 
       console.log('POST /transcription/process/:id');
       console.log('Transcript ID:', id);
       console.log('Audio file path:', audioFilePath);
+      console.log('Audio stream URL:', audioStreamUrl);
+      console.log('File ID:', fileId);
 
-      const result = await transcriptionService.processWithAudioFile(id, audioFilePath);
+      const result = await transcriptionService.processWithAudioFile(id, audioFilePath, audioStreamUrl);
 
       if (!result.success) {
         return res.status(400).json({

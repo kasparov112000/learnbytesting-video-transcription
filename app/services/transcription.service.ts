@@ -417,9 +417,11 @@ export class TranscriptionService {
    * Process a transcript with provided audio file
    * Called when audio file is available from android-sync
    */
-  async processWithAudioFile(transcriptId: string, audioFilePath: string): Promise<{ success: boolean; error?: string }> {
+  async processWithAudioFile(transcriptId: string, audioFilePath: string, audioStreamUrl?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      console.log(`Processing transcript ${transcriptId} with audio file: ${audioFilePath}`);
+      console.log(`Processing transcript ${transcriptId}`);
+      console.log(`  Audio file path: ${audioFilePath}`);
+      console.log(`  Audio stream URL: ${audioStreamUrl || 'not provided'}`);
 
       // Get transcript document
       const transcript = await Transcript.findById(transcriptId);
@@ -432,14 +434,29 @@ export class TranscriptionService {
         return { success: false, error: `Transcript is not in pending_download status (current: ${transcript.status})` };
       }
 
+      // Determine the actual file path to use
+      let actualAudioPath = audioFilePath;
+
+      // If we have a stream URL, download the file first
+      if (audioStreamUrl) {
+        console.log('Downloading audio from stream URL...');
+        try {
+          actualAudioPath = await this.downloadAudioFromUrl(audioStreamUrl, transcriptId);
+          console.log(`Downloaded audio to: ${actualAudioPath}`);
+        } catch (downloadError: any) {
+          console.error('Failed to download audio:', downloadError.message);
+          return { success: false, error: `Failed to download audio: ${downloadError.message}` };
+        }
+      }
+
       // Update status to processing
       transcript.status = 'processing';
       transcript.progress = 10;
-      transcript.audioFilePath = audioFilePath;
+      transcript.audioFilePath = actualAudioPath;
       await transcript.save();
 
       // Start background processing
-      this.processTranscriptionWithFile(transcriptId, audioFilePath).catch((error) => {
+      this.processTranscriptionWithFile(transcriptId, actualAudioPath).catch((error) => {
         console.error(`Error processing transcription ${transcriptId}:`, error);
       });
 
@@ -449,6 +466,86 @@ export class TranscriptionService {
       console.error('Error processing with audio file:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Download audio file from a stream URL to local temp directory
+   */
+  private async downloadAudioFromUrl(streamUrl: string, transcriptId: string): Promise<string> {
+    const https = require('https');
+    const http = require('http');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+
+    // Create temp directory for audio files if it doesn't exist
+    const tempDir = path.join(os.tmpdir(), 'video-transcription');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // Extract filename from URL or use transcriptId
+    const urlPath = new URL(streamUrl, 'http://localhost').pathname;
+    const ext = path.extname(urlPath) || '.mp4';
+    const localPath = path.join(tempDir, `${transcriptId}${ext}`);
+
+    console.log(`Downloading audio from: ${streamUrl}`);
+    console.log(`Saving to: ${localPath}`);
+
+    return new Promise((resolve, reject) => {
+      const protocol = streamUrl.startsWith('https') ? https : http;
+      const file = fs.createWriteStream(localPath);
+
+      const request = protocol.get(streamUrl, (response: any) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          // Handle redirects
+          file.close();
+          fs.unlinkSync(localPath);
+          this.downloadAudioFromUrl(response.headers.location, transcriptId)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(localPath);
+          reject(new Error(`HTTP ${response.statusCode}: Failed to download audio`));
+          return;
+        }
+
+        const totalSize = parseInt(response.headers['content-length'], 10);
+        let downloadedSize = 0;
+
+        response.on('data', (chunk: Buffer) => {
+          downloadedSize += chunk.length;
+          const percent = totalSize ? Math.round((downloadedSize / totalSize) * 100) : 0;
+          if (percent % 20 === 0) {
+            console.log(`  Download progress: ${percent}% (${(downloadedSize / 1024 / 1024).toFixed(2)} MB)`);
+          }
+        });
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          console.log(`  Download complete: ${(downloadedSize / 1024 / 1024).toFixed(2)} MB`);
+          resolve(localPath);
+        });
+      });
+
+      request.on('error', (err: Error) => {
+        file.close();
+        fs.unlink(localPath, () => {}); // Delete incomplete file
+        reject(err);
+      });
+
+      file.on('error', (err: Error) => {
+        file.close();
+        fs.unlink(localPath, () => {}); // Delete incomplete file
+        reject(err);
+      });
+    });
   }
 
   /**
