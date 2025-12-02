@@ -44,10 +44,26 @@ export class SelfHostedWhisperService {
       console.log(`Read ${audioBuffer.length} bytes from audio file`);
 
       // Create form data with buffer instead of stream
+      // Detect content type from file extension
+      const ext = path.extname(absolutePath).toLowerCase();
+      const contentTypeMap: Record<string, string> = {
+        '.wav': 'audio/wav',
+        '.mp3': 'audio/mpeg',
+        '.m4a': 'audio/mp4',
+        '.mp4': 'audio/mp4',
+        '.ogg': 'audio/ogg',
+        '.flac': 'audio/flac',
+        '.webm': 'audio/webm'
+      };
+      const contentType = contentTypeMap[ext] || 'audio/wav';
+      const filename = `audio${ext}`;
+
+      console.log(`Sending audio as: ${filename} (${contentType})`);
+
       const formData = new FormData();
       formData.append('audio', audioBuffer, {
-        filename: 'audio.wav',
-        contentType: 'audio/wav'
+        filename: filename,
+        contentType: contentType
       });
 
       // Extract language code (e.g., 'en-US' -> 'en')

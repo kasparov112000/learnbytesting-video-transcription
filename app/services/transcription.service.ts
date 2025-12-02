@@ -107,10 +107,20 @@ export class TranscriptionService {
           console.log(`✓ Video info retrieved from YouTube API`);
         } catch (error: any) {
           console.warn(`YouTube API failed: ${error.message}`);
+          // In manual_download mode, don't fall back to Python downloader - we only need video info
+          const isManualDownload = serviceConfigs.transcriptionWorkflow === 'manual_download';
+          if (isManualDownload) {
+            throw new Error(`YouTube API failed to get video info: ${error.message}. Please check YOUTUBE_API_KEY is configured.`);
+          }
           console.log('Falling back to yt-dlp for video info...');
           videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
         }
       } else {
+        // No YouTube API configured
+        const isManualDownload = serviceConfigs.transcriptionWorkflow === 'manual_download';
+        if (isManualDownload) {
+          throw new Error('YouTube API is required for manual_download mode. Please set YOUTUBE_API_KEY environment variable.');
+        }
         videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
       }
 
@@ -134,6 +144,14 @@ export class TranscriptionService {
         }
       }
 
+      // Check if we're in manual download workflow mode
+      // Manual download mode works independently of mock mode:
+      // - mock=true + manual_download: Use mock video info, status=pending_download
+      // - mock=false + manual_download: Fetch real video info from YouTube, status=pending_download
+      // - mock=false + auto: Fetch real video info, auto-process transcription
+      const isManualDownloadMode = serviceConfigs.transcriptionWorkflow === 'manual_download';
+      const initialStatus = isManualDownloadMode ? 'pending_download' : 'pending';
+
       // 3. Create transcript document
       const transcript = await Transcript.create({
         youtubeUrl,
@@ -141,7 +159,7 @@ export class TranscriptionService {
         videoTitle: videoInfo.title,
         videoDuration: videoInfo.duration,
         language,
-        status: 'pending',
+        status: initialStatus,
         progress: 0,
         provider: serviceConfigs.transcriptionProvider,
         questionId: questionId ? new mongoose.Types.ObjectId(questionId) : undefined,
@@ -149,11 +167,27 @@ export class TranscriptionService {
       });
 
       console.log(`Created transcript document: ${transcript._id}`);
+      console.log(`  Status: ${initialStatus}`);
 
-      // 4. Start background processing (don't await)
-      this.processTranscription(transcript._id.toString()).catch((error) => {
-        console.error(`Error processing transcription ${transcript._id}:`, error);
-      });
+      // 4. Handle based on workflow mode
+      if (isManualDownloadMode) {
+        // Manual download mode: Don't process automatically
+        // The user will download the video manually on their phone
+        // android-sync will sync the downloaded audio file
+        // A separate endpoint will be used to trigger transcription once audio is available
+        console.log('📱 MANUAL DOWNLOAD MODE: Record created, waiting for audio to be synced via android-sync');
+        console.log(`  Video ID: ${videoInfo.videoId}`);
+        console.log(`  Title: ${videoInfo.title}`);
+        console.log('  Next steps:');
+        console.log('    1. Download video on Android phone');
+        console.log('    2. android-sync will sync the audio file');
+        console.log('    3. Call /transcription/process/:id to transcribe');
+      } else {
+        // Auto mode: Start background processing (don't await)
+        this.processTranscription(transcript._id.toString()).catch((error) => {
+          console.error(`Error processing transcription ${transcript._id}:`, error);
+        });
+      }
 
       return transcript._id.toString();
 
@@ -366,6 +400,133 @@ export class TranscriptionService {
   }
 
   /**
+   * Get all transcripts with pending_download status
+   * Used by jobs service to poll for records that need audio files
+   */
+  async getPendingDownloads(): Promise<ITranscript[]> {
+    try {
+      const transcripts = await Transcript.find({ status: 'pending_download' }).sort({ createdDate: 1 });
+      return transcripts;
+    } catch (error: any) {
+      console.error('Error getting pending downloads:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Process a transcript with provided audio file
+   * Called when audio file is available from android-sync
+   */
+  async processWithAudioFile(transcriptId: string, audioFilePath: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`Processing transcript ${transcriptId} with audio file: ${audioFilePath}`);
+
+      // Get transcript document
+      const transcript = await Transcript.findById(transcriptId);
+
+      if (!transcript) {
+        return { success: false, error: 'Transcript not found' };
+      }
+
+      if (transcript.status !== 'pending_download') {
+        return { success: false, error: `Transcript is not in pending_download status (current: ${transcript.status})` };
+      }
+
+      // Update status to processing
+      transcript.status = 'processing';
+      transcript.progress = 10;
+      transcript.audioFilePath = audioFilePath;
+      await transcript.save();
+
+      // Start background processing
+      this.processTranscriptionWithFile(transcriptId, audioFilePath).catch((error) => {
+        console.error(`Error processing transcription ${transcriptId}:`, error);
+      });
+
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('Error processing with audio file:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Process transcription with a provided audio file (background task)
+   */
+  private async processTranscriptionWithFile(transcriptId: string, audioFilePath: string): Promise<void> {
+    let convertedAudioPath: string | null = null;
+
+    try {
+      console.log(`Processing transcription with file: ${transcriptId}`);
+
+      // Get transcript document
+      const transcript = await Transcript.findById(transcriptId);
+
+      if (!transcript) {
+        throw new Error(`Transcript not found: ${transcriptId}`);
+      }
+
+      // Convert audio to speech-recognizable format
+      console.log('Step 1: Converting audio format...');
+      convertedAudioPath = await this.audioConverter.convertToSpeechFormat(audioFilePath);
+
+      transcript.progress = 50;
+      await transcript.save();
+
+      // Transcribe audio using the configured provider
+      console.log('Step 2: Transcribing audio...');
+      let transcriptText: string;
+
+      if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
+        transcriptText = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
+      } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
+        transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+      } else if (this.googleSpeech) {
+        transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+      } else {
+        throw new Error('No transcription provider available');
+      }
+
+      transcript.progress = 90;
+      await transcript.save();
+
+      // Save transcript and update document
+      const wordCount = transcriptText.split(/\s+/).length;
+
+      transcript.transcript = transcriptText;
+      transcript.wordCount = wordCount;
+      transcript.status = 'completed';
+      transcript.progress = 100;
+      transcript.completedDate = new Date();
+      await transcript.save();
+
+      console.log(`✓ Transcription completed: ${transcriptId}`);
+      console.log(`  Words: ${wordCount}`);
+      console.log(`  Length: ${transcriptText.length} characters`);
+
+      // Auto-create a question with the transcript
+      await this.autoCreateQuestion(transcript);
+
+    } catch (error: any) {
+      console.error(`✗ Transcription failed: ${transcriptId}`, error);
+
+      // Update transcript with error
+      await Transcript.findByIdAndUpdate(transcriptId, {
+        status: 'failed',
+        errorMessage: error.message,
+        progress: 0
+      });
+
+    } finally {
+      // Cleanup temporary files
+      if (serviceConfigs.cleanupTempFiles && convertedAudioPath && convertedAudioPath !== audioFilePath) {
+        this.youtubeDownloader.deleteAudioFile(convertedAudioPath);
+      }
+    }
+  }
+
+  /**
    * Auto-create a question with the transcript (no chess moves)
    * This is called when transcription completes to automatically create a question
    * that the user can later add chess moves to.
@@ -380,6 +541,7 @@ export class TranscriptionService {
       const questionPayload = {
         name: transcript.videoTitle || 'Video Transcript',
         questionText: `Video transcript from: ${transcript.videoTitle}`,
+        questionType: 'chess-video-transcript', // Create chess-video-transcript question type for video-based questions
         videoTranscript: transcript.transcript,
         youtubeUrl: transcript.youtubeUrl,
         videoId: transcript.videoId,

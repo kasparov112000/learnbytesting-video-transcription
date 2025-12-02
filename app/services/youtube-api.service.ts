@@ -62,11 +62,10 @@ export class YouTubeAPIService {
       // Parse ISO 8601 duration (e.g., "PT4M13S" -> 253 seconds)
       const duration = this.parseISO8601Duration(contentDetails.duration!);
 
-      // Check video length limit
+      // Note: Duration check removed from here - it's done later during processing
+      // For manual_download mode, we just need the video info for matching
       if (duration > serviceConfigs.maxVideoLengthSeconds) {
-        throw new Error(
-          `Video duration (${duration}s) exceeds maximum allowed duration (${serviceConfigs.maxVideoLengthSeconds}s)`
-        );
+        console.warn(`⚠️  Video duration (${duration}s) exceeds recommended limit (${serviceConfigs.maxVideoLengthSeconds}s)`);
       }
 
       // Check if captions are available

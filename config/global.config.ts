@@ -15,8 +15,15 @@ const serviceConfigs = {
   // Transcription Service Provider: 'google', 'openai', 'self-hosted', or 'mock'
   transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'self-hosted',
 
-  // Mock Transcription (for testing without API charges)
-  useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION === 'true',
+  // Mock Transcription - default true for manual download workflow
+  // Set USE_MOCK_TRANSCRIPTION=false to enable automatic downloading
+  useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION !== 'false',
+
+  // Transcription Workflow Mode: 'auto' or 'manual_download'
+  // - 'auto': Automatically download audio and transcribe (default when useMockTranscription=false)
+  // - 'manual_download': Create pending record, wait for audio to be synced via android-sync
+  // When useMockTranscription=true and workflow=manual_download, status stays 'pending_download'
+  transcriptionWorkflow: process.env.TRANSCRIPTION_WORKFLOW || 'manual_download',
 
   // Self-hosted Whisper Configuration (recommended - 95% cost savings!)
   whisperServiceUrl: process.env.WHISPER_SERVICE_URL || 'http://localhost:5000',

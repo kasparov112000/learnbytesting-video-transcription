@@ -40,7 +40,16 @@ export class AudioConverterService {
     return new Promise((resolve, reject) => {
       try {
         const format = serviceConfigs.audioFormat; // 'wav' or 'flac'
-        const outputPath = inputPath.replace(path.extname(inputPath), `.${format}`);
+
+        // Write to local temp directory instead of source directory
+        // This avoids issues with Google Drive, network shares, etc.
+        const tempDir = serviceConfigs.tempAudioDir || './temp/audio';
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const baseName = path.basename(inputPath, path.extname(inputPath));
+        const outputPath = path.join(tempDir, `${baseName}.${format}`);
 
         console.log(`Converting audio: ${inputPath} -> ${outputPath}`);
         console.log(`Format: ${format}, Channels: ${serviceConfigs.audioChannels}, Sample Rate: ${serviceConfigs.audioSampleRate}Hz`);

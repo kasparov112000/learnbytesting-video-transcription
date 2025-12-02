@@ -214,6 +214,78 @@ export default function (app: any, express: any) {
   });
 
   /**
+   * GET /transcription/pending
+   * Get all transcripts with pending_download status
+   * Used by jobs service to poll for records that need processing
+   */
+  router.get('/transcription/pending', async (req: any, res: any) => {
+    try {
+      console.log('GET /transcription/pending');
+
+      const transcripts = await transcriptionService.getPendingDownloads();
+
+      res.status(200).json({
+        count: transcripts.length,
+        transcripts: transcripts.map(t => ({
+          transcriptionId: t._id,
+          videoId: t.videoId,
+          youtubeUrl: t.youtubeUrl,
+          videoTitle: t.videoTitle,
+          status: t.status,
+          createdDate: t.createdDate
+        }))
+      });
+
+    } catch (error: any) {
+      console.error('Error getting pending transcripts:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to get pending transcripts'
+      });
+    }
+  });
+
+  /**
+   * POST /transcription/process/:id
+   * Trigger processing for a pending_download transcript
+   * Called by jobs service when audio file is available
+   *
+   * Request body:
+   * {
+   *   "audioFilePath": "/path/to/audio/file.m4a"
+   * }
+   */
+  router.post('/transcription/process/:id', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { audioFilePath } = req.body;
+
+      console.log('POST /transcription/process/:id');
+      console.log('Transcript ID:', id);
+      console.log('Audio file path:', audioFilePath);
+
+      const result = await transcriptionService.processWithAudioFile(id, audioFilePath);
+
+      if (!result.success) {
+        return res.status(400).json({
+          error: result.error || 'Failed to process transcript'
+        });
+      }
+
+      res.status(200).json({
+        transcriptionId: id,
+        status: 'processing',
+        message: 'Transcription processing started'
+      });
+
+    } catch (error: any) {
+      console.error('Error processing transcript:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to process transcript'
+      });
+    }
+  });
+
+  /**
    * DELETE /transcription/:id
    * Delete a transcript
    */

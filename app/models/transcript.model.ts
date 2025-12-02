@@ -7,7 +7,7 @@ export interface ITranscript extends Document {
   videoDuration?: number;
   transcript: string;
   language: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'pending_download' | 'processing' | 'completed' | 'failed';
   progress: number;
   errorMessage?: string;
   questionId?: mongoose.Types.ObjectId;
@@ -48,7 +48,7 @@ const TranscriptSchema: Schema = new Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed'],
+    enum: ['pending', 'pending_download', 'processing', 'completed', 'failed'],
     default: 'pending',
     index: true
   },
