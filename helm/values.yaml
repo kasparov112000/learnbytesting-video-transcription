@@ -96,6 +96,9 @@ env:
   # Transcription Provider: 'google' or 'openai'
   TRANSCRIPTION_PROVIDER: "google"
 
+  # Disable mock mode - use real YouTube API and transcription
+  USE_MOCK_TRANSCRIPTION: "false"
+
   # Google Cloud Configuration (required if TRANSCRIPTION_PROVIDER=google)
   GOOGLE_CLOUD_PROJECT_ID: "learnbytesting-ai"
   # Path inside container where credentials will be mounted via Kubernetes secret
