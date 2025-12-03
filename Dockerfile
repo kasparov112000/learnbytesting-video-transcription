@@ -77,6 +77,7 @@ COPY --from=1 /var/app/dist ./dist
 # USER pwcapp
 RUN npm install --production
 
-
+# Create temp directories for audio processing
+RUN mkdir -p /tmp/audio /tmp/video-transcription
 
 ENTRYPOINT ["node", "./dist/app/index.js"]
