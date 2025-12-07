@@ -1,4 +1,4 @@
-import { Transcript, ITranscript } from '../models/transcript.model';
+import { Transcript, ITranscript, getTranscriptModelForRequest } from '../models/transcript.model';
 import { PythonYouTubeDownloaderService } from './python-youtube-downloader.service';
 import { YouTubeAPIService } from './youtube-api.service';
 import { AudioConverterService } from './audio-converter.service';
@@ -7,6 +7,7 @@ import { OpenAIWhisperService } from './openai-whisper.service';
 import { SelfHostedWhisperService } from './self-hosted-whisper.service';
 import { MockTranscriptionService } from './mock-transcription.service';
 import { serviceConfigs } from '../../config/global.config';
+import { databaseService } from './database.service';
 import mongoose from 'mongoose';
 
 export class TranscriptionService {
@@ -413,10 +414,12 @@ export class TranscriptionService {
   /**
    * Get all transcripts with pending_download status
    * Used by jobs service to poll for records that need audio files
+   * @param req Express request object - used to determine which database to query
    */
-  async getPendingDownloads(): Promise<ITranscript[]> {
+  async getPendingDownloads(req?: any): Promise<ITranscript[]> {
     try {
-      const transcripts = await Transcript.find({ status: 'pending_download' }).sort({ createdDate: 1 });
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcripts = await TranscriptModel.find({ status: 'pending_download' }).sort({ createdDate: 1 });
       return transcripts;
     } catch (error: any) {
       console.error('Error getting pending downloads:', error);
@@ -457,15 +460,18 @@ export class TranscriptionService {
   /**
    * Process a transcript with provided audio file
    * Called when audio file is available from android-sync
+   * @param req Express request object - used to determine which database to query
    */
-  async processWithAudioFile(transcriptId: string, audioFilePath: string, audioStreamUrl?: string): Promise<{ success: boolean; error?: string }> {
+  async processWithAudioFile(transcriptId: string, audioFilePath: string, audioStreamUrl?: string, req?: any): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`Processing transcript ${transcriptId}`);
       console.log(`  Audio file path: ${audioFilePath}`);
       console.log(`  Audio stream URL: ${audioStreamUrl || 'not provided'}`);
+      console.log(`  Database: ${databaseService.isProductionRequest(req) ? 'PRODUCTION' : 'LOCAL'}`);
 
-      // Get transcript document
-      const transcript = await Transcript.findById(transcriptId);
+      // Get transcript document using appropriate database
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
 
       if (!transcript) {
         return { success: false, error: 'Transcript not found' };
@@ -506,8 +512,8 @@ export class TranscriptionService {
       transcript.audioFilePath = actualAudioPath;
       await transcript.save();
 
-      // Start background processing
-      this.processTranscriptionWithFile(transcriptId, actualAudioPath).catch((error) => {
+      // Start background processing (pass request for database selection)
+      this.processTranscriptionWithFile(transcriptId, actualAudioPath, req).catch((error) => {
         console.error(`Error processing transcription ${transcriptId}:`, error);
       });
 
@@ -601,15 +607,17 @@ export class TranscriptionService {
 
   /**
    * Process transcription with a provided audio file (background task)
+   * @param req Express request object - used to determine which database to use
    */
-  private async processTranscriptionWithFile(transcriptId: string, audioFilePath: string): Promise<void> {
+  private async processTranscriptionWithFile(transcriptId: string, audioFilePath: string, req?: any): Promise<void> {
     let convertedAudioPath: string | null = null;
+    const TranscriptModel = getTranscriptModelForRequest(req);
 
     try {
       console.log(`Processing transcription with file: ${transcriptId}`);
 
       // Get transcript document
-      const transcript = await Transcript.findById(transcriptId);
+      const transcript = await TranscriptModel.findById(transcriptId);
 
       if (!transcript) {
         throw new Error(`Transcript not found: ${transcriptId}`);
@@ -674,8 +682,8 @@ export class TranscriptionService {
     } catch (error: any) {
       console.error(`✗ Transcription failed: ${transcriptId}`, error);
 
-      // Update transcript with error
-      await Transcript.findByIdAndUpdate(transcriptId, {
+      // Update transcript with error (use same model for consistency)
+      await TranscriptModel.findByIdAndUpdate(transcriptId, {
         status: 'failed',
         errorMessage: error.message,
         progress: 0

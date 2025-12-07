@@ -217,12 +217,18 @@ export default function (app: any, express: any) {
    * GET /transcription/pending
    * Get all transcripts with pending_download status
    * Used by jobs service to poll for records that need processing
+   *
+   * NOTE: This endpoint uses dynamic database selection based on request origin.
+   * - Requests from Tailscale/K8s (100.x.x.x, 10.x.x.x) use production MongoDB
+   * - Local requests (localhost, 127.0.0.1) use local MongoDB
    */
   router.get('/transcription/pending', async (req: any, res: any) => {
     try {
       console.log('GET /transcription/pending');
+      console.log('  Request origin:', req.ip, req.headers['x-forwarded-for'] || '');
 
-      const transcripts = await transcriptionService.getPendingDownloads();
+      // Pass request for database selection
+      const transcripts = await transcriptionService.getPendingDownloads(req);
 
       res.status(200).json({
         count: transcripts.length,
@@ -249,6 +255,10 @@ export default function (app: any, express: any) {
    * Trigger processing for a pending_download transcript
    * Called by jobs service when audio file is available
    *
+   * NOTE: This endpoint uses dynamic database selection based on request origin.
+   * - Requests from Tailscale/K8s use production MongoDB
+   * - Local requests use local MongoDB
+   *
    * Request body:
    * {
    *   "audioFilePath": "/path/to/audio/file.m4a",  // Local file path (for local dev)
@@ -266,8 +276,10 @@ export default function (app: any, express: any) {
       console.log('Audio file path:', audioFilePath);
       console.log('Audio stream URL:', audioStreamUrl);
       console.log('File ID:', fileId);
+      console.log('Request origin:', req.ip, req.headers['x-forwarded-for'] || '');
 
-      const result = await transcriptionService.processWithAudioFile(id, audioFilePath, audioStreamUrl);
+      // Pass request for database selection
+      const result = await transcriptionService.processWithAudioFile(id, audioFilePath, audioStreamUrl, req);
 
       if (!result.success) {
         return res.status(400).json({

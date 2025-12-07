@@ -14,7 +14,10 @@ const serviceConfigs = {
   appVersion: process.env.CHARTS_RELEASE_VERSION || appVersion,
 
   // MongoDB Configuration
+  // Local MongoDB for local development requests
   mongoDbUrl: process.env.MONGODB_URL || 'mongodb://localhost:27017/mdr-video-transcriptions',
+  // Production MongoDB for requests coming from K8s cluster via Tailscale
+  mongoDbUrlProd: process.env.MONGODB_URL_PROD || process.env.MONGODB_URL || 'mongodb://localhost:27017/mdr-video-transcriptions',
 
   // Transcription Service Provider: 'google', 'openai', 'self-hosted', or 'mock'
   transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'self-hosted',

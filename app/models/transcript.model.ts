@@ -1,4 +1,5 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Connection, Model } from 'mongoose';
+import { databaseService } from '../services/database.service';
 
 export interface ITranscript extends Document {
   youtubeUrl: string;
@@ -100,4 +101,31 @@ TranscriptSchema.index({ createdDate: -1 });
 TranscriptSchema.index({ status: 1, createdDate: -1 });
 TranscriptSchema.index({ questionId: 1 });
 
+// Cache for compiled models per connection
+const modelCache = new Map<Connection, Model<ITranscript>>();
+
+/**
+ * Get the Transcript model for a specific connection
+ * This allows using different MongoDB databases based on request origin
+ */
+export function getTranscriptModel(connection: Connection): Model<ITranscript> {
+  if (modelCache.has(connection)) {
+    return modelCache.get(connection)!;
+  }
+
+  const model = connection.model<ITranscript>('Transcript', TranscriptSchema);
+  modelCache.set(connection, model);
+  return model;
+}
+
+/**
+ * Get the Transcript model for the appropriate database based on request
+ * @param req Express request object (optional) - used to determine local vs prod
+ */
+export function getTranscriptModelForRequest(req?: any): Model<ITranscript> {
+  const connection = databaseService.getConnection(req);
+  return getTranscriptModel(connection);
+}
+
+// Default export using default mongoose connection (for backwards compatibility)
 export const Transcript = mongoose.model<ITranscript>('Transcript', TranscriptSchema);

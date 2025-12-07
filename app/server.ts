@@ -2,12 +2,12 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import http from 'http';
-import mongoose from 'mongoose';
 import helmet from 'helmet';
 
 // Note: dotenv is loaded in config/global.config.ts before any process.env access
 import { serviceConfigs } from '../config/global.config';
 import routes from './routes/default.api';
+import { databaseService } from './services/database.service';
 
 const debug = require('debug')('video-transcription:server');
 
@@ -61,8 +61,8 @@ class Server {
         console.log(`  Provider: ${serviceConfigs.transcriptionProvider}`);
         console.log('==================================================');
 
-        // Connect to MongoDB
-        this.databaseConnect()
+        // Connect to MongoDB (supports both local and production databases)
+        databaseService.initialize()
           .then(() => {
             // Register routes
             const router = routes(this.app, express);
@@ -90,39 +90,6 @@ class Server {
   };
 
   /**
-   * Connect to MongoDB
-   */
-  private databaseConnect = async (): Promise<void> => {
-    try {
-      console.log('Connecting to MongoDB...');
-      console.log(`  URL: ${serviceConfigs.mongoDbUrl}`);
-
-      await mongoose.connect(serviceConfigs.mongoDbUrl, {
-        // Removed deprecated options
-      });
-
-      console.log('✓ MongoDB connected successfully');
-
-      // Handle MongoDB connection events
-      mongoose.connection.on('error', (error) => {
-        console.error('MongoDB connection error:', error);
-      });
-
-      mongoose.connection.on('disconnected', () => {
-        console.warn('MongoDB disconnected');
-      });
-
-      mongoose.connection.on('reconnected', () => {
-        console.log('MongoDB reconnected');
-      });
-
-    } catch (error: any) {
-      console.error('✗ MongoDB connection failed:', error.message);
-      throw error;
-    }
-  };
-
-  /**
    * Graceful shutdown
    */
   public down = (): Promise<void> => {
@@ -137,9 +104,8 @@ class Server {
           } else {
             console.log('✓ Server closed');
 
-            // Close MongoDB connection
-            mongoose.connection.close(false).then(() => {
-              console.log('✓ MongoDB connection closed');
+            // Close all MongoDB connections
+            databaseService.close().then(() => {
               resolve();
             }).catch((mongoErr) => {
               console.error('Error closing MongoDB:', mongoErr);
