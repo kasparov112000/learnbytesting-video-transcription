@@ -279,23 +279,34 @@ export class TranscriptionService {
 
       // 3. Transcribe audio using the configured provider
       console.log('Step 3: Transcribing audio...');
-      let transcriptText: string;
+      let transcriptionResult: { transcript: string; processing_time: number; language?: string; duration?: number };
 
       if (serviceConfigs.useMockTranscription && this.mockTranscription) {
         // Use mock transcription (no API charges)
-        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language);
+        transcriptionResult = {
+          transcript: await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language),
+          processing_time: 0 // Mock transcription is instantaneous
+        };
       } else if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
-        transcriptText = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
-        transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+        // Assuming openaiWhisper.transcribe also returns an object with processing_time
+        transcriptionResult = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'mock' && this.mockTranscription) {
         // Alternative way to enable mock
-        transcriptText = await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language);
+        transcriptionResult = {
+          transcript: await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language),
+          processing_time: 0 // Mock transcription is instantaneous
+        };
       } else if (this.googleSpeech) {
-        transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+        // Assuming googleSpeech.transcribe also returns an object with processing_time
+        transcriptionResult = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
       } else {
         throw new Error('No transcription provider available');
       }
+
+      const transcriptText = transcriptionResult.transcript;
+      console.log(`✓ Transcription by ${serviceConfigs.transcriptionProvider} completed in ${transcriptionResult.processing_time.toFixed(2)}s`);
 
       transcript.progress = 90;
       await transcript.save();
@@ -603,25 +614,40 @@ export class TranscriptionService {
 
       // Transcribe audio using the configured provider
       console.log('Step 2: Transcribing audio...');
-      let transcriptText: string;
+      let transcriptionResult: { transcript: string; processing_time: number; language?: string; duration?: number };
 
       if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
-        transcriptText = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
-        transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+        // Assuming openaiWhisper.transcribe also returns an object with processing_time
+        const openaiTranscriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = {
+          transcript: openaiTranscriptText,
+          processing_time: 0 // Placeholder, actual time would come from service
+        };
       } else if (this.googleSpeech) {
-        transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+        // Assuming googleSpeech.transcribe also returns an object with processing_time
+        const googleTranscriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = {
+          transcript: googleTranscriptText,
+          processing_time: 0 // Placeholder, actual time would come from service
+        };
       } else {
         throw new Error('No transcription provider available');
+      }
+
+      // Log processing time if available
+      if (transcriptionResult.processing_time !== undefined) {
+        console.log(`  Transcription processing time: ${transcriptionResult.processing_time.toFixed(2)}s`);
       }
 
       transcript.progress = 90;
       await transcript.save();
 
       // Save transcript and update document
-      const wordCount = transcriptText.split(/\s+/).length;
+      const wordCount = transcriptionResult.transcript.split(/\s+/).length;
 
-      transcript.transcript = transcriptText;
+      transcript.transcript = transcriptionResult.transcript;
       transcript.wordCount = wordCount;
       transcript.status = 'completed';
       transcript.progress = 100;
@@ -630,7 +656,7 @@ export class TranscriptionService {
 
       console.log(`✓ Transcription completed: ${transcriptId}`);
       console.log(`  Words: ${wordCount}`);
-      console.log(`  Length: ${transcriptText.length} characters`);
+      console.log(`  Length: ${transcriptionResult.transcript.length} characters`);
 
       // Auto-create a question with the transcript
       await this.autoCreateQuestion(transcript);

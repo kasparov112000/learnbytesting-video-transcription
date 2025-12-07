@@ -1,3 +1,7 @@
+// Load environment variables at the very start, before any process.env access
+import dotenv from 'dotenv';
+dotenv.config();
+
 const ENV_NAME = process.env.ENV_NAME || 'LOCAL';
 const msport = 3016;
 const { version: appVersion, name: appName } = require('../../package.json');
@@ -26,7 +30,14 @@ const serviceConfigs = {
   transcriptionWorkflow: process.env.TRANSCRIPTION_WORKFLOW || 'manual_download',
 
   // Self-hosted Whisper Configuration (recommended - 95% cost savings!)
-  whisperServiceUrl: process.env.WHISPER_SERVICE_URL || 'http://localhost:5000',
+  // When deployed: Routes through orchestrator for Tailscale support to local machine
+  // When local: Connects directly to whisper on port 5000
+  // Set WHISPER_SERVICE_URL env var to override (e.g., Tailscale IP or orchestrator URL)
+  whisperServiceUrl: process.env.WHISPER_SERVICE_URL || (
+    ENV_NAME === 'LOCAL'
+      ? 'http://localhost:5000'  // Direct connection for local dev
+      : 'http://orchestrator:8080/whisper'  // Route through orchestrator for Tailscale
+  ),
 
   // Google Cloud Speech-to-Text Configuration
   googleCloudProjectId: process.env.GOOGLE_CLOUD_PROJECT_ID,

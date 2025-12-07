@@ -1,16 +1,13 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import http from 'http';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 
+// Note: dotenv is loaded in config/global.config.ts before any process.env access
 import { serviceConfigs } from '../config/global.config';
 import routes from './routes/default.api';
-
-// Load environment variables
-dotenv.config();
 
 const debug = require('debug')('video-transcription:server');
 

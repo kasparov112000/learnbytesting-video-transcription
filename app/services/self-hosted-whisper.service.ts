@@ -19,7 +19,7 @@ export class SelfHostedWhisperService {
    * @param language Language code (e.g., 'en-US', 'es-ES')
    * @returns Transcript text
    */
-  async transcribe(audioFilePath: string, language: string = 'en-US'): Promise<string> {
+  async transcribe(audioFilePath: string, language: string = 'en-US'): Promise<{ transcript: string; processing_time: number; language: string; duration: number }> {
     try {
       // Convert to absolute path if it's relative
       const absolutePath = path.isAbsolute(audioFilePath)
@@ -84,10 +84,15 @@ export class SelfHostedWhisperService {
         throw new Error('Invalid response from Whisper service');
       }
 
-      const transcript = response.data.transcript;
-      console.log(`✓ Self-hosted transcription completed: ${transcript.length} characters`);
+      const { transcript, language: detectedLanguage, duration = 0, processing_time = 0 } = response.data;
+      console.log(`✓ Self-hosted transcription completed in ${(processing_time || 0).toFixed(2)}s`);
 
-      return transcript;
+      return {
+        transcript,
+        processing_time: processing_time || 0,
+        language: detectedLanguage || language,
+        duration: duration || 0
+      };
 
     } catch (error: any) {
       console.error('Self-hosted Whisper error:', error.message);
