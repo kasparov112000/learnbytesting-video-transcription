@@ -226,6 +226,7 @@ export default function (app: any, express: any) {
     try {
       console.log('GET /transcription/pending');
       console.log('  Request origin:', req.ip, req.headers['x-forwarded-for'] || '');
+      console.log('  x-source-cluster header:', req.headers['x-source-cluster'] || 'NOT SET');
 
       // Pass request for database selection
       const transcripts = await transcriptionService.getPendingDownloads(req);
