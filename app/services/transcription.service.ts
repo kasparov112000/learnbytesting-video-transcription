@@ -477,9 +477,15 @@ export class TranscriptionService {
 
       // Determine the actual file path to use
       let actualAudioPath = audioFilePath;
+      const fs = require('fs');
 
-      // If we have a stream URL, download the file first
-      if (audioStreamUrl) {
+      // LOCAL OPTIMIZATION: Check if file exists locally first (avoids network transfer)
+      // This is useful when android-sync and video-transcription run on the same machine
+      if (audioFilePath && fs.existsSync(audioFilePath)) {
+        console.log('✓ Using local file directly (no download needed):', audioFilePath);
+        actualAudioPath = audioFilePath;
+      } else if (audioStreamUrl) {
+        // Fall back to HTTP streaming if file not accessible locally
         console.log('Downloading audio from stream URL...');
         try {
           actualAudioPath = await this.downloadAudioFromUrl(audioStreamUrl, transcriptId);
@@ -488,6 +494,10 @@ export class TranscriptionService {
           console.error('Failed to download audio:', downloadError.message);
           return { success: false, error: `Failed to download audio: ${downloadError.message}` };
         }
+      } else if (audioFilePath) {
+        // audioFilePath provided but doesn't exist and no stream URL
+        console.error(`Audio file not found locally: ${audioFilePath}`);
+        return { success: false, error: `Audio file not found: ${audioFilePath}` };
       }
 
       // Update status to processing
