@@ -19,6 +19,10 @@ export interface ITranscript extends Document {
   wordCount?: number;
   createdByGuid?: string;
   modifiedByGuid?: string;
+  // Metrics
+  transcriptionDurationMs?: number;  // How long the transcription took in milliseconds
+  requestSource?: 'local' | 'production';  // Where the request originated from
+  processingStartedDate?: Date;  // When processing started (for calculating duration)
 }
 
 const TranscriptSchema: Schema = new Schema({
@@ -90,6 +94,17 @@ const TranscriptSchema: Schema = new Schema({
   },
   modifiedByGuid: {
     type: String
+  },
+  // Metrics
+  transcriptionDurationMs: {
+    type: Number
+  },
+  requestSource: {
+    type: String,
+    enum: ['local', 'production']
+  },
+  processingStartedDate: {
+    type: Date
   }
 }, {
   timestamps: true,

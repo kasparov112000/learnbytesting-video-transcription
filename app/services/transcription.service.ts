@@ -1,4 +1,4 @@
-import { Transcript, ITranscript, getTranscriptModelForRequest } from '../models/transcript.model';
+import { ITranscript, getTranscriptModelForRequest } from '../models/transcript.model';
 import { PythonYouTubeDownloaderService } from './python-youtube-downloader.service';
 import { YouTubeAPIService } from './youtube-api.service';
 import { AudioConverterService } from './audio-converter.service';
@@ -75,12 +75,14 @@ export class TranscriptionService {
    * @param youtubeUrl YouTube video URL
    * @param language Language code (e.g., 'en-US')
    * @param questionId Optional question ID to link the transcript
+   * @param req Optional Express request object - used to determine which database to use
    * @returns Transcript document ID
    */
   async startTranscription(
     youtubeUrl: string,
     language: string = serviceConfigs.defaultLanguage,
-    questionId?: string
+    questionId?: string,
+    req?: any
   ): Promise<string> {
     try {
       console.log(`Starting transcription for: ${youtubeUrl}`);
@@ -129,7 +131,9 @@ export class TranscriptionService {
       console.log(`Duration: ${videoInfo.duration}s`);
 
       // 2. Check if transcript already exists for this video
-      const existing = await Transcript.findOne({
+      // Use appropriate connection based on request origin
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const existing = await TranscriptModel.findOne({
         videoId: videoInfo.videoId,
         status: { $in: ['completed', 'processing'] }
       });
@@ -154,7 +158,7 @@ export class TranscriptionService {
       const initialStatus = isManualDownloadMode ? 'pending_download' : 'pending';
 
       // 3. Create transcript document
-      const transcript = await Transcript.create({
+      const transcript = await TranscriptModel.create({
         youtubeUrl,
         videoId: videoInfo.videoId,
         videoTitle: videoInfo.title,
@@ -208,8 +212,9 @@ export class TranscriptionService {
     try {
       console.log(`Processing transcription: ${transcriptId}`);
 
-      // Get transcript document
-      const transcript = await Transcript.findById(transcriptId);
+      // Get transcript document using local connection
+      const TranscriptModel = getTranscriptModelForRequest();
+      const transcript = await TranscriptModel.findById(transcriptId);
 
       if (!transcript) {
         throw new Error(`Transcript not found: ${transcriptId}`);
@@ -333,7 +338,8 @@ export class TranscriptionService {
       console.error(`✗ Transcription failed: ${transcriptId}`, error);
 
       // Update transcript with error
-      await Transcript.findByIdAndUpdate(transcriptId, {
+      const TranscriptModelForError = getTranscriptModelForRequest();
+      await TranscriptModelForError.findByIdAndUpdate(transcriptId, {
         status: 'failed',
         errorMessage: error.message,
         progress: 0
@@ -355,9 +361,10 @@ export class TranscriptionService {
   /**
    * Get transcription status
    */
-  async getTranscriptionStatus(transcriptId: string): Promise<ITranscript | null> {
+  async getTranscriptionStatus(transcriptId: string, req?: any): Promise<ITranscript | null> {
     try {
-      const transcript = await Transcript.findById(transcriptId);
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
       return transcript;
     } catch (error: any) {
       console.error('Error getting transcription status:', error);
@@ -368,9 +375,10 @@ export class TranscriptionService {
   /**
    * Get transcript by ID
    */
-  async getTranscript(transcriptId: string): Promise<ITranscript | null> {
+  async getTranscript(transcriptId: string, req?: any): Promise<ITranscript | null> {
     try {
-      const transcript = await Transcript.findById(transcriptId);
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
       return transcript;
     } catch (error: any) {
       console.error('Error getting transcript:', error);
@@ -381,9 +389,10 @@ export class TranscriptionService {
   /**
    * Get transcripts by question ID
    */
-  async getTranscriptsByQuestionId(questionId: string): Promise<ITranscript[]> {
+  async getTranscriptsByQuestionId(questionId: string, req?: any): Promise<ITranscript[]> {
     try {
-      const transcripts = await Transcript.find({ questionId: new mongoose.Types.ObjectId(questionId) });
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcripts = await TranscriptModel.find({ questionId: new mongoose.Types.ObjectId(questionId) });
       return transcripts;
     } catch (error: any) {
       console.error('Error getting transcripts by question ID:', error);
@@ -394,9 +403,10 @@ export class TranscriptionService {
   /**
    * Delete transcript
    */
-  async deleteTranscript(transcriptId: string): Promise<boolean> {
+  async deleteTranscript(transcriptId: string, req?: any): Promise<boolean> {
     try {
-      const result = await Transcript.findByIdAndDelete(transcriptId);
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const result = await TranscriptModel.findByIdAndDelete(transcriptId);
       return !!result;
     } catch (error: any) {
       console.error('Error deleting transcript:', error);
@@ -431,11 +441,12 @@ export class TranscriptionService {
    * Reset a transcript back to pending_download status
    * Used to retry transcription processing
    */
-  async resetTranscript(transcriptId: string): Promise<{ success: boolean; error?: string }> {
+  async resetTranscript(transcriptId: string, req?: any): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`Resetting transcript ${transcriptId} to pending_download`);
 
-      const transcript = await Transcript.findById(transcriptId);
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
 
       if (!transcript) {
         return { success: false, error: 'Transcript not found' };
@@ -506,11 +517,19 @@ export class TranscriptionService {
         return { success: false, error: `Audio file not found: ${audioFilePath}` };
       }
 
-      // Update status to processing
+      // Determine request source
+      const isProductionSource = req && databaseService.isProductionRequest(req);
+      const requestSource = isProductionSource ? 'production' : 'local';
+
+      // Update status to processing and track metrics
       transcript.status = 'processing';
       transcript.progress = 10;
       transcript.audioFilePath = actualAudioPath;
+      transcript.requestSource = requestSource;
+      transcript.processingStartedDate = new Date();
       await transcript.save();
+
+      console.log(`  Request source: ${requestSource}`);
 
       // Start background processing (pass request for database selection)
       this.processTranscriptionWithFile(transcriptId, actualAudioPath, req).catch((error) => {
@@ -664,20 +683,31 @@ export class TranscriptionService {
 
       // Save transcript and update document
       const wordCount = transcriptionResult.transcript.split(/\s+/).length;
+      const completedDate = new Date();
+
+      // Calculate transcription duration
+      let transcriptionDurationMs: number | undefined;
+      if (transcript.processingStartedDate) {
+        transcriptionDurationMs = completedDate.getTime() - new Date(transcript.processingStartedDate).getTime();
+      }
 
       transcript.transcript = transcriptionResult.transcript;
       transcript.wordCount = wordCount;
       transcript.status = 'completed';
       transcript.progress = 100;
-      transcript.completedDate = new Date();
+      transcript.completedDate = completedDate;
+      transcript.transcriptionDurationMs = transcriptionDurationMs;
       await transcript.save();
 
       console.log(`✓ Transcription completed: ${transcriptId}`);
       console.log(`  Words: ${wordCount}`);
       console.log(`  Length: ${transcriptionResult.transcript.length} characters`);
+      console.log(`  Duration: ${transcriptionDurationMs ? (transcriptionDurationMs / 1000).toFixed(2) + 's' : 'unknown'}`);
+      console.log(`  Source: ${transcript.requestSource || 'unknown'}`);
 
       // Auto-create a question with the transcript
-      await this.autoCreateQuestion(transcript);
+      // Pass req so we know whether to route through orchestrator for production
+      await this.autoCreateQuestion(transcript, req);
 
     } catch (error: any) {
       console.error(`✗ Transcription failed: ${transcriptId}`, error);
@@ -701,12 +731,31 @@ export class TranscriptionService {
    * Auto-create a question with the transcript (no chess moves)
    * This is called when transcription completes to automatically create a question
    * that the user can later add chess moves to.
+   *
+   * @param transcript The completed transcript document
+   * @param req Optional Express request - if from production (x-source-cluster: k8s),
+   *            routes through orchestrator to create question in production DB
    */
-  private async autoCreateQuestion(transcript: ITranscript): Promise<void> {
+  private async autoCreateQuestion(transcript: ITranscript, req?: any): Promise<void> {
     try {
       console.log(`📝 Auto-creating question for transcript: ${transcript._id}`);
       console.log(`  Video: ${transcript.videoTitle}`);
       console.log(`  Words: ${transcript.wordCount}`);
+
+      // Log request headers for debugging
+      console.log(`  Request headers available: ${req ? 'YES' : 'NO'}`);
+      if (req?.headers) {
+        console.log(`  x-source-cluster: ${req.headers['x-source-cluster'] || 'NOT SET'}`);
+        console.log(`  x-route-questions-to: ${req.headers['x-route-questions-to'] || 'NOT SET'}`);
+        console.log(`  x-forwarded-for: ${req.headers['x-forwarded-for'] || 'NOT SET'}`);
+      }
+
+      // Determine if this is a production request
+      // Check both x-source-cluster (for DB) and x-route-questions-to (for question routing)
+      const routeQuestionsTo = req?.headers?.['x-route-questions-to'];
+      const isProduction = routeQuestionsTo === 'production' || (req && databaseService.isProductionRequest(req));
+      console.log(`  Route questions to: ${routeQuestionsTo || 'not specified'}`);
+      console.log(`  Target database: ${isProduction ? 'PRODUCTION' : 'LOCAL'}`);
 
       // Build the question payload - a simple question with just the transcript
       const questionPayload = {
@@ -737,15 +786,29 @@ export class TranscriptionService {
         status: 'transcript-only' // Mark as needing chess moves
       };
 
-      // Call the questions service directly
-      const questionsUrl = `${serviceConfigs.questionsServiceUrl}/questions`;
-      console.log(`  Calling questions service: POST ${questionsUrl}`);
+      // Choose endpoint based on request origin:
+      // - Production requests: Route through orchestrator (which connects to K8s questions service)
+      // - Local requests: Call questions service directly
+      let questionsUrl: string;
+      let headers: any = {
+        'Content-Type': 'application/json'
+      };
+
+      if (isProduction) {
+        // Route through orchestrator to create question in production DB
+        questionsUrl = `${serviceConfigs.orchestratorUrl}/api/questions`;
+        // Pass through the cluster header so orchestrator knows this is a K8s request
+        headers['x-source-cluster'] = 'k8s';
+        console.log(`  Routing through orchestrator: POST ${questionsUrl}`);
+      } else {
+        // Call local questions service directly
+        questionsUrl = `${serviceConfigs.questionsServiceUrl}/questions`;
+        console.log(`  Calling local questions service: POST ${questionsUrl}`);
+      }
 
       const axios = require('axios');
       const response = await axios.post(questionsUrl, questionPayload, {
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         timeout: 30000 // 30 second timeout
       });
 

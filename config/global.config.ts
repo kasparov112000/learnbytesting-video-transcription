@@ -74,6 +74,11 @@ const serviceConfigs = {
 
   // Questions Service (for auto-creating questions from transcripts)
   questionsServiceUrl: process.env.QUESTIONS_SERVICE_URL || (process.env.ENV_NAME === 'LOCAL' ? 'http://localhost:3011' : 'http://questions:3011'),
+
+  // Orchestrator URL (for routing requests to production services)
+  // Used when running locally but receiving requests from K8s cluster
+  // For production routing, we call the K8s orchestrator directly
+  orchestratorUrl: process.env.ORCHESTRATOR_URL || 'https://orchestrator.learnbytesting.ai',
 };
 
 // App Dynamics Configuration

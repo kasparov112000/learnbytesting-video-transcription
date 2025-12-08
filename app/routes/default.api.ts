@@ -54,7 +54,8 @@ export default function (app: any, express: any) {
       const transcriptId = await transcriptionService.startTranscription(
         youtubeUrl,
         language,
-        questionId
+        questionId,
+        req
       );
 
       res.status(202).json({
@@ -91,7 +92,7 @@ export default function (app: any, express: any) {
       console.log('GET /transcription/status/:id');
       console.log('Transcript ID:', id);
 
-      const transcript = await transcriptionService.getTranscriptionStatus(id);
+      const transcript = await transcriptionService.getTranscriptionStatus(id, req);
 
       if (!transcript) {
         return res.status(404).json({
@@ -142,7 +143,7 @@ export default function (app: any, express: any) {
       console.log('GET /transcription/transcript/:id');
       console.log('Transcript ID:', id);
 
-      const transcript = await transcriptionService.getTranscript(id);
+      const transcript = await transcriptionService.getTranscript(id, req);
 
       if (!transcript) {
         return res.status(404).json({
@@ -190,7 +191,7 @@ export default function (app: any, express: any) {
       console.log('GET /transcription/question/:questionId');
       console.log('Question ID:', questionId);
 
-      const transcripts = await transcriptionService.getTranscriptsByQuestionId(questionId);
+      const transcripts = await transcriptionService.getTranscriptsByQuestionId(questionId, req);
 
       res.status(200).json({
         questionId,
@@ -278,6 +279,8 @@ export default function (app: any, express: any) {
       console.log('Audio stream URL:', audioStreamUrl);
       console.log('File ID:', fileId);
       console.log('Request origin:', req.ip, req.headers['x-forwarded-for'] || '');
+      console.log('x-source-cluster:', req.headers['x-source-cluster'] || 'NOT SET');
+      console.log('x-route-questions-to:', req.headers['x-route-questions-to'] || 'NOT SET');
 
       // Pass request for database selection
       const result = await transcriptionService.processWithAudioFile(id, audioFilePath, audioStreamUrl, req);
@@ -314,7 +317,7 @@ export default function (app: any, express: any) {
       console.log('POST /transcription/:id/reset');
       console.log('Transcript ID:', id);
 
-      const result = await transcriptionService.resetTranscript(id);
+      const result = await transcriptionService.resetTranscript(id, req);
 
       if (!result.success) {
         return res.status(404).json({
@@ -346,7 +349,7 @@ export default function (app: any, express: any) {
       console.log('DELETE /transcription/:id');
       console.log('Transcript ID:', id);
 
-      const success = await transcriptionService.deleteTranscript(id);
+      const success = await transcriptionService.deleteTranscript(id, req);
 
       if (!success) {
         return res.status(404).json({
