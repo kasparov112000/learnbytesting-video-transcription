@@ -415,6 +415,207 @@ export class TranscriptionService {
   }
 
   /**
+   * Get all transcripts with pagination and filtering
+   */
+  async getAll(req?: any, params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{ transcriptions: ITranscript[]; total: number }> {
+    try {
+      const TranscriptModel = getTranscriptModelForRequest(req);
+
+      const page = params?.page || 1;
+      const pageSize = params?.pageSize || 20;
+      const skip = (page - 1) * pageSize;
+
+      // Build query filter
+      const filter: any = {};
+      if (params?.status) {
+        filter.status = params.status;
+      }
+
+      // Build sort
+      const sortField = params?.sortBy || 'createdDate';
+      const sortOrder = params?.sortOrder === 'asc' ? 1 : -1;
+      const sort: any = { [sortField]: sortOrder };
+
+      const [transcriptions, total] = await Promise.all([
+        TranscriptModel.find(filter).sort(sort).skip(skip).limit(pageSize),
+        TranscriptModel.countDocuments(filter)
+      ]);
+
+      return { transcriptions, total };
+    } catch (error: any) {
+      console.error('Error getting all transcripts:', error);
+      return { transcriptions: [], total: 0 };
+    }
+  }
+
+  /**
+   * Get transcripts for ag-grid with server-side pagination
+   * Supports sorting, filtering, and pagination from ag-grid requests
+   */
+  async getGrid(req?: any, gridRequest?: {
+    startRow?: number;
+    endRow?: number;
+    sortModel?: Array<{ colId: string; sort: 'asc' | 'desc' }>;
+    filterModel?: Record<string, any>;
+    search?: { search?: string };
+  }): Promise<{ rows: ITranscript[]; lastRow: number }> {
+    try {
+      const TranscriptModel = getTranscriptModelForRequest(req);
+
+      const startRow = gridRequest?.startRow || 0;
+      const endRow = gridRequest?.endRow || 20;
+      const pageSize = endRow - startRow;
+
+      // Build query filter from ag-grid filterModel
+      const filter: any = {};
+
+      if (gridRequest?.filterModel) {
+        for (const [field, filterDef] of Object.entries(gridRequest.filterModel)) {
+          const filterValue = filterDef as any;
+
+          if (filterValue.filterType === 'text') {
+            if (filterValue.type === 'contains') {
+              filter[field] = { $regex: filterValue.filter, $options: 'i' };
+            } else if (filterValue.type === 'equals') {
+              filter[field] = filterValue.filter;
+            }
+          } else if (filterValue.filterType === 'set') {
+            if (filterValue.values && filterValue.values.length > 0) {
+              filter[field] = { $in: filterValue.values };
+            }
+          } else if (filterValue.filterType === 'date') {
+            // Handle date filters
+            if (filterValue.dateFrom) {
+              filter[field] = filter[field] || {};
+              filter[field].$gte = new Date(filterValue.dateFrom);
+            }
+            if (filterValue.dateTo) {
+              filter[field] = filter[field] || {};
+              filter[field].$lte = new Date(filterValue.dateTo);
+            }
+          }
+        }
+      }
+
+      // Handle global search
+      if (gridRequest?.search?.search) {
+        const searchRegex = { $regex: gridRequest.search.search, $options: 'i' };
+        filter.$or = [
+          { videoTitle: searchRegex },
+          { youtubeUrl: searchRegex },
+          { status: searchRegex }
+        ];
+      }
+
+      // Build sort from ag-grid sortModel
+      const sort: any = {};
+      if (gridRequest?.sortModel && gridRequest.sortModel.length > 0) {
+        for (const sortItem of gridRequest.sortModel) {
+          sort[sortItem.colId] = sortItem.sort === 'asc' ? 1 : -1;
+        }
+      } else {
+        // Default sort by createdDate descending
+        sort.createdDate = -1;
+      }
+
+      const [rows, totalCount] = await Promise.all([
+        TranscriptModel.find(filter).sort(sort).skip(startRow).limit(pageSize),
+        TranscriptModel.countDocuments(filter)
+      ]);
+
+      // lastRow is -1 if there are more rows, otherwise it's the total count
+      const lastRow = startRow + rows.length >= totalCount ? totalCount : -1;
+
+      return { rows, lastRow };
+    } catch (error: any) {
+      console.error('Error getting grid data:', error);
+      return { rows: [], lastRow: 0 };
+    }
+  }
+
+  /**
+   * Retry a failed transcription
+   * Resets the transcript to pending_download status so it can be re-processed
+   */
+  async retryTranscription(transcriptId: string, req?: any): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`Retrying transcription ${transcriptId}`);
+
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
+
+      if (!transcript) {
+        return { success: false, error: 'Transcript not found' };
+      }
+
+      if (transcript.status !== 'failed') {
+        return { success: false, error: `Can only retry failed transcriptions (current status: ${transcript.status})` };
+      }
+
+      // Reset to pending_download for re-processing
+      transcript.status = 'pending_download';
+      transcript.progress = 0;
+      transcript.errorMessage = '';
+      transcript.audioFilePath = undefined;
+      transcript.processingStartedDate = undefined;
+      await transcript.save();
+
+      console.log(`Transcript ${transcriptId} reset for retry`);
+      return { success: true };
+
+    } catch (error: any) {
+      console.error('Error retrying transcription:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Update a transcription record
+   * @param transcriptId The ID of the transcription to update
+   * @param updateData The data to update (categoryId, category, videoTitle, etc.)
+   * @param req Express request object - used to determine which database to use
+   */
+  async updateTranscription(transcriptId: string, updateData: any, req?: any): Promise<any> {
+    try {
+      console.log(`Updating transcription ${transcriptId}`);
+      console.log('Update data:', JSON.stringify(updateData, null, 2));
+
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
+
+      if (!transcript) {
+        return null;
+      }
+
+      // Update allowed fields
+      if (updateData.categoryId !== undefined) {
+        transcript.categoryId = updateData.categoryId;
+      }
+      if (updateData.category !== undefined) {
+        transcript.category = updateData.category;
+      }
+      if (updateData.videoTitle !== undefined) {
+        transcript.videoTitle = updateData.videoTitle;
+      }
+
+      await transcript.save();
+
+      console.log(`Transcription ${transcriptId} updated successfully`);
+      return transcript;
+
+    } catch (error: any) {
+      console.error('Error updating transcription:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Clean up old temporary files
    */
   cleanupTempFiles(): void {

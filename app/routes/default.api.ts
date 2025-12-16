@@ -169,7 +169,9 @@ export default function (app: any, express: any) {
         provider: transcript.provider,
         createdDate: transcript.createdDate,
         completedDate: transcript.completedDate,
-        wordCount: transcript.wordCount
+        wordCount: transcript.wordCount,
+        categoryId: transcript.categoryId,
+        category: transcript.category
       });
 
     } catch (error: any) {
@@ -365,6 +367,141 @@ export default function (app: any, express: any) {
       console.error('Error deleting transcript:', error);
       res.status(500).json({
         error: error.message || 'Failed to delete transcript'
+      });
+    }
+  });
+
+  /**
+   * PUT /transcription/:id
+   * Update a transcript (category, videoTitle, etc.)
+   */
+  router.put('/transcription/:id', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+
+      console.log('PUT /transcription/:id');
+      console.log('Transcript ID:', id);
+      console.log('Update data:', JSON.stringify(updateData, null, 2));
+
+      const result = await transcriptionService.updateTranscription(id, updateData, req);
+
+      if (!result) {
+        return res.status(404).json({
+          error: 'Transcript not found'
+        });
+      }
+
+      res.status(200).json({
+        message: 'Transcript updated successfully',
+        transcription: result
+      });
+
+    } catch (error: any) {
+      console.error('Error updating transcript:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to update transcript'
+      });
+    }
+  });
+
+  /**
+   * GET /transcription/list
+   * Get all transcriptions with pagination and filtering
+   *
+   * Query params:
+   * - page: Page number (default: 1)
+   * - pageSize: Items per page (default: 20)
+   * - status: Filter by status
+   * - sortBy: Field to sort by (default: createdDate)
+   * - sortOrder: 'asc' or 'desc' (default: desc)
+   */
+  router.get('/transcription/list', async (req: any, res: any) => {
+    try {
+      console.log('GET /transcription/list');
+      console.log('Query params:', req.query);
+
+      const params = {
+        page: parseInt(req.query.page) || 1,
+        pageSize: parseInt(req.query.pageSize) || 20,
+        status: req.query.status,
+        sortBy: req.query.sortBy,
+        sortOrder: req.query.sortOrder as 'asc' | 'desc'
+      };
+
+      const result = await transcriptionService.getAll(req, params);
+
+      res.status(200).json(result);
+
+    } catch (error: any) {
+      console.error('Error getting transcription list:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to get transcription list'
+      });
+    }
+  });
+
+  /**
+   * POST /transcription/grid
+   * Get transcriptions for ag-grid with server-side pagination
+   * Supports sorting, filtering, and pagination from ag-grid requests
+   *
+   * Request body:
+   * {
+   *   "startRow": 0,
+   *   "endRow": 20,
+   *   "sortModel": [{ "colId": "createdDate", "sort": "desc" }],
+   *   "filterModel": { "status": { "filterType": "set", "values": ["completed"] } },
+   *   "search": { "search": "search text" }
+   * }
+   */
+  router.post('/transcription/grid', async (req: any, res: any) => {
+    try {
+      console.log('POST /transcription/grid');
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+      const result = await transcriptionService.getGrid(req, req.body);
+
+      res.status(200).json(result);
+
+    } catch (error: any) {
+      console.error('Error getting grid data:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to get grid data'
+      });
+    }
+  });
+
+  /**
+   * POST /transcription/retry/:id
+   * Retry a failed transcription
+   * Resets the transcript to pending_download status
+   */
+  router.post('/transcription/retry/:id', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+
+      console.log('POST /transcription/retry/:id');
+      console.log('Transcription ID:', id);
+
+      const result = await transcriptionService.retryTranscription(id, req);
+
+      if (!result.success) {
+        return res.status(400).json({
+          error: result.error || 'Failed to retry transcription'
+        });
+      }
+
+      res.status(200).json({
+        message: 'Transcription queued for retry',
+        transcriptionId: id,
+        status: 'pending_download'
+      });
+
+    } catch (error: any) {
+      console.error('Error retrying transcription:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to retry transcription'
       });
     }
   });

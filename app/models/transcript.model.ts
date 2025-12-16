@@ -12,6 +12,8 @@ export interface ITranscript extends Document {
   progress: number;
   errorMessage?: string;
   questionId?: mongoose.Types.ObjectId;
+  categoryId?: string;  // Reference to category
+  category?: any;  // Category object with name, displayName, etc.
   provider: 'google' | 'openai' | 'self-hosted' | 'mock' | 'youtube-api-captions';
   audioFilePath?: string;
   createdDate: Date;
@@ -69,6 +71,13 @@ const TranscriptSchema: Schema = new Schema({
   questionId: {
     type: Schema.Types.ObjectId,
     ref: 'Question'
+  },
+  categoryId: {
+    type: String,
+    index: true
+  },
+  category: {
+    type: Schema.Types.Mixed  // Flexible object to store category data
   },
   provider: {
     type: String,
