@@ -507,6 +507,40 @@ export default function (app: any, express: any) {
   });
 
   /**
+   * POST /transcription/:id/refresh-title
+   * Re-fetch and update the video title from YouTube for an existing record
+   * Useful for fixing records with missing or incorrect titles
+   */
+  router.post('/transcription/:id/refresh-title', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+
+      console.log('POST /transcription/:id/refresh-title');
+      console.log('Transcription ID:', id);
+
+      const result = await transcriptionService.refreshVideoTitle(id, req);
+
+      if (!result.success) {
+        return res.status(400).json({
+          error: result.error || 'Failed to refresh video title'
+        });
+      }
+
+      res.status(200).json({
+        message: 'Video title refreshed successfully',
+        transcriptionId: id,
+        videoTitle: result.videoTitle
+      });
+
+    } catch (error: any) {
+      console.error('Error refreshing video title:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to refresh video title'
+      });
+    }
+  });
+
+  /**
    * GET /health
    * Health check endpoint
    */

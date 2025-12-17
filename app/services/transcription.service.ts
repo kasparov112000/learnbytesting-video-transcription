@@ -158,17 +158,28 @@ export class TranscriptionService {
       const initialStatus = isManualDownloadMode ? 'pending_download' : 'pending';
 
       // 3. Create transcript document
+      // Ensure videoTitle is never empty - use fallback chain
+      const videoTitle = videoInfo.title && videoInfo.title.trim()
+        ? videoInfo.title.trim()
+        : `Video ${videoInfo.videoId || 'Unknown'}`;
+
+      // Extract user context for createdByGuid
+      const userContext = req?.body?.userContext;
+      const createdByGuid = userContext?.userGuid;
+      console.log('Creating transcript with createdByGuid:', createdByGuid || 'not provided');
+
       const transcript = await TranscriptModel.create({
         youtubeUrl,
         videoId: videoInfo.videoId,
-        videoTitle: videoInfo.title,
+        videoTitle: videoTitle,
         videoDuration: videoInfo.duration,
         language,
         status: initialStatus,
         progress: 0,
         provider: serviceConfigs.transcriptionProvider,
         questionId: questionId ? new mongoose.Types.ObjectId(questionId) : undefined,
-        createdDate: new Date()
+        createdDate: new Date(),
+        createdByGuid: createdByGuid || undefined
       });
 
       console.log(`Created transcript document: ${transcript._id}`);
@@ -464,6 +475,12 @@ export class TranscriptionService {
     sortModel?: Array<{ colId: string; sort: 'asc' | 'desc' }>;
     filterModel?: Record<string, any>;
     search?: { search?: string };
+    userContext?: {
+      userGuid?: string;
+      userEmail?: string;
+      isAdmin?: boolean;
+      roles?: string[];
+    };
   }): Promise<{ rows: ITranscript[]; lastRow: number }> {
     try {
       const TranscriptModel = getTranscriptModelForRequest(req);
@@ -472,8 +489,30 @@ export class TranscriptionService {
       const endRow = gridRequest?.endRow || 20;
       const pageSize = endRow - startRow;
 
+      // Check environment - development (localhost) allows all users to see all records
+      const isLocalDev = !req?.headers?.['x-source-cluster'] &&
+                         (process.env.ENV_NAME === 'LOCAL' || !process.env.ENV_NAME);
+
+      // Extract user context for filtering
+      const userContext = gridRequest?.userContext;
+      const userGuid = userContext?.userGuid;
+      const isAdmin = userContext?.isAdmin || false;
+
+      console.log('[GRID] Environment:', isLocalDev ? 'LOCAL/DEV' : 'PRODUCTION');
+      console.log('[GRID] User GUID:', userGuid);
+      console.log('[GRID] Is Admin:', isAdmin);
+
       // Build query filter from ag-grid filterModel
       const filter: any = {};
+
+      // In production, filter by user unless they are admin
+      // In development (localhost), show all records to all users
+      if (!isLocalDev && !isAdmin && userGuid) {
+        filter.createdByGuid = userGuid;
+        console.log('[GRID] Filtering by createdByGuid:', userGuid);
+      } else {
+        console.log('[GRID] Showing all records (isLocalDev:', isLocalDev, ', isAdmin:', isAdmin, ')');
+      }
 
       if (gridRequest?.filterModel) {
         for (const [field, filterDef] of Object.entries(gridRequest.filterModel)) {
@@ -1034,6 +1073,70 @@ export class TranscriptionService {
       }
       // Don't throw - we don't want to fail the transcription just because question creation failed
       // The transcript is still saved and the user can create a question manually
+    }
+  }
+
+  /**
+   * Refresh video title for an existing transcript by re-fetching from YouTube
+   * Useful for fixing records with missing or empty titles
+   */
+  async refreshVideoTitle(transcriptId: string, req?: any): Promise<{ success: boolean; videoTitle?: string; error?: string }> {
+    try {
+      console.log(`Refreshing video title for transcript: ${transcriptId}`);
+
+      const TranscriptModel = getTranscriptModelForRequest(req);
+      const transcript = await TranscriptModel.findById(transcriptId);
+
+      if (!transcript) {
+        return { success: false, error: 'Transcript not found' };
+      }
+
+      if (!transcript.youtubeUrl) {
+        return { success: false, error: 'No YouTube URL found for this transcript' };
+      }
+
+      // Try to fetch video info from YouTube API
+      let videoTitle: string | null = null;
+
+      if (this.youtubeApi) {
+        try {
+          console.log('Fetching video info from YouTube API...');
+          const videoInfo = await this.youtubeApi.getVideoInfo(transcript.youtubeUrl);
+          videoTitle = videoInfo.title;
+          console.log(`Got title from YouTube API: ${videoTitle}`);
+        } catch (error: any) {
+          console.warn(`YouTube API failed: ${error.message}`);
+        }
+      }
+
+      // If YouTube API failed, try Python downloader
+      if (!videoTitle) {
+        try {
+          console.log('Trying Python downloader for video info...');
+          const videoInfo = await this.youtubeDownloader.getVideoInfo(transcript.youtubeUrl);
+          videoTitle = videoInfo.title;
+          console.log(`Got title from Python downloader: ${videoTitle}`);
+        } catch (error: any) {
+          console.warn(`Python downloader failed: ${error.message}`);
+        }
+      }
+
+      // Use fallback if still no title
+      if (!videoTitle || !videoTitle.trim()) {
+        videoTitle = `Video ${transcript.videoId || 'Unknown'}`;
+        console.log(`Using fallback title: ${videoTitle}`);
+      }
+
+      // Update the transcript
+      transcript.videoTitle = videoTitle;
+      await transcript.save();
+
+      console.log(`✓ Updated video title for transcript ${transcriptId}: ${videoTitle}`);
+      return { success: true, videoTitle };
+
+    } catch (error: any) {
+      console.error('Error refreshing video title:', error);
+      return { success: false, error: error.message };
     }
   }
 }
