@@ -1,68 +1,92 @@
+# GitHub Actions workflow for video-transcription microservice
+# NOTE: This service runs LOCALLY via Tailscale, not in K8s
+# Docker images are still built for backup/future use, but deployment is disabled
+
+name: Build video-transcription (No K8s Deploy - Runs Locally)
+
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      deploy_tag:
+        description: 'Docker image tag to deploy (defaults to latest commit SHA)'
+        required: false
+        default: ''
 
 jobs:
-
   build:
-    name: Build, push, and deploy
+    name: Build and push (NO K8s deployment)
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Checkout main
-      uses: actions/checkout@v4
-
-    - name: Update SHA
-      run: echo $GITHUB_SHA > $GITHUB_WORKSPACE/helm/notes
-
-    - name: Install doctl
-      uses: digitalocean/action-doctl@v2
-      with:
-        token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-    - name: Login to DockerHub
-      uses: docker/login-action@v1
-      with:
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-
-    - name: Build and push
-      id: docker_build
-      uses: docker/build-push-action@v2
-      with:
+      - name: Build and push
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
           context: .
           push: true
           tags: |
             kasparov112000/learnbytesting-video-transcription-docker:latest
-            kasparov112000/learnbytesting-video-transcription-docker:${{ github.sha }}
-          secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.MYTOKEN }}
+            kasparov112000/learnbytesting-video-transcription-docker:${{ github.event.inputs.deploy_tag || github.sha }}
+          build-args: |
+            ENV_NAME=PRODUCTION
 
-    - name: Save DigitalOcean kubeconfig with short-lived credentials
-      run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 3b23a2dd-3391-4d1a-a478-e2a5564de99c
+      - name: Build complete
+        run: |
+          echo "=============================================="
+          echo "Docker image built and pushed successfully!"
+          echo "Image: kasparov112000/learnbytesting-video-transcription-docker:${{ github.sha }}"
+          echo ""
+          echo "NOTE: K8s deployment is DISABLED for this service."
+          echo "This service runs LOCALLY via Tailscale."
+          echo "=============================================="
 
-    - name: Wait for image availability
-      run: |
-        echo "Waiting for image to be available on DockerHub..."
-        for i in {1..30}; do
-          if docker manifest inspect kasparov112000/learnbytesting-video-transcription-docker:${{ github.sha }} > /dev/null 2>&1; then
-            echo "Image is available!"
-            break
-          fi
-          echo "Waiting... ($i/30)"
-          sleep 10
-        done
-
-    - name: Prep helm chart
-      run: |
-          mv ./helm/Chart.yaml ./helm/Chart.old.yaml &&
-          cat ./helm/Chart.old.yaml | grep -v appVersion > ./helm/Chart.yaml &&
-          echo -e "\r\nappVersion: v${GITHUB_REF##*/}\r\n" >> ./helm/Chart.yaml &&
-          cat ./helm/Chart.yaml
-    - name: Deploy
-      uses: WyriHaximus/github-action-helm3@v2
-      with:
-          exec: helm upgrade video-transcription ./helm/ --install --wait --atomic --timeout=10m --force --set=app.name=video-transcription --set=image.tag=${{ github.sha }} --values=./helm/values.yaml
-          kubeconfig: '${{ secrets.KUBECONFIG }}'
+      # =============================================================
+      # K8s DEPLOYMENT DISABLED - Service runs locally via Tailscale
+      # =============================================================
+      # To re-enable deployment, uncomment the steps below:
+      #
+      # - name: Install doctl
+      #   uses: digitalocean/action-doctl@v2
+      #   with:
+      #     token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      #
+      # - name: Save DigitalOcean kubeconfig
+      #   run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 3b23a2dd-3391-4d1a-a478-e2a5564de99c
+      #
+      # - name: Wait for image availability
+      #   run: |
+      #     echo "Waiting for image to be available on DockerHub..."
+      #     for i in {1..30}; do
+      #       if docker manifest inspect kasparov112000/learnbytesting-video-transcription-docker:${{ github.sha }} > /dev/null 2>&1; then
+      #         echo "Image is available!"
+      #         break
+      #       fi
+      #       echo "Waiting... ($i/30)"
+      #       sleep 10
+      #     done
+      #
+      # - name: Deploy with Helm
+      #   run: |
+      #     helm upgrade video-transcription ./helm/ \
+      #       --install \
+      #       --wait \
+      #       --timeout=10m \
+      #       --atomic \
+      #       --set=image.tag=${{ github.sha }} \
+      #       --values=./helm/values.yaml
+      #
+      # - name: Verify deployment
+      #   run: |
+      #     kubectl rollout status deployment/video-transcription --timeout=5m
+      #     kubectl get pods -l app=video-transcription
