@@ -8,6 +8,7 @@ import { SelfHostedWhisperService } from './self-hosted-whisper.service';
 import { MockTranscriptionService } from './mock-transcription.service';
 import { serviceConfigs } from '../../config/global.config';
 import { databaseService } from './database.service';
+import { auditLogService } from './audit-log.service';
 import mongoose from 'mongoose';
 
 export class TranscriptionService {
@@ -759,11 +760,31 @@ export class TranscriptionService {
           console.log(`Downloaded audio to: ${actualAudioPath}`);
         } catch (downloadError: any) {
           console.error('Failed to download audio:', downloadError.message);
+          // Log download error to audit log
+          await auditLogService.logTranscriptionError(
+            transcriptId,
+            `Failed to download audio: ${downloadError.message}`,
+            downloadError.stack,
+            {
+              audioStreamUrl,
+              stage: 'downloadAudioFromUrl'
+            }
+          );
           return { success: false, error: `Failed to download audio: ${downloadError.message}` };
         }
       } else if (audioFilePath) {
         // audioFilePath provided but doesn't exist and no stream URL
         console.error(`Audio file not found locally: ${audioFilePath}`);
+        // Log file not found error to audit log
+        await auditLogService.logTranscriptionError(
+          transcriptId,
+          `Audio file not found locally: ${audioFilePath}`,
+          undefined,
+          {
+            audioFilePath,
+            stage: 'processWithAudioFile'
+          }
+        );
         return { success: false, error: `Audio file not found: ${audioFilePath}` };
       }
 
@@ -790,6 +811,17 @@ export class TranscriptionService {
 
     } catch (error: any) {
       console.error('Error processing with audio file:', error);
+      // Log general processing error to audit log
+      await auditLogService.logTranscriptionError(
+        transcriptId,
+        error.message,
+        error.stack,
+        {
+          audioFilePath,
+          audioStreamUrl,
+          stage: 'processWithAudioFile'
+        }
+      );
       return { success: false, error: error.message };
     }
   }
@@ -962,12 +994,39 @@ export class TranscriptionService {
     } catch (error: any) {
       console.error(`✗ Transcription failed: ${transcriptId}`, error);
 
+      // Get transcript details for audit log
+      let videoTitle = 'Unknown';
+      let videoUrl = 'Unknown';
+      try {
+        const failedTranscript = await TranscriptModel.findById(transcriptId);
+        if (failedTranscript) {
+          videoTitle = failedTranscript.videoTitle || 'Unknown';
+          videoUrl = failedTranscript.youtubeUrl || 'Unknown';
+        }
+      } catch (e) {
+        // Ignore errors getting transcript details
+      }
+
       // Update transcript with error (use same model for consistency)
       await TranscriptModel.findByIdAndUpdate(transcriptId, {
         status: 'failed',
         errorMessage: error.message,
         progress: 0
       });
+
+      // Log error to audit log service via orchestrator
+      await auditLogService.logTranscriptionError(
+        transcriptId,
+        error.message,
+        error.stack,
+        {
+          videoTitle,
+          videoUrl,
+          audioFilePath,
+          stage: 'processTranscriptionWithFile',
+          provider: serviceConfigs.transcriptionProvider
+        }
+      );
 
     } finally {
       // Cleanup temporary files
