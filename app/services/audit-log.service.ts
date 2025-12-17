@@ -8,6 +8,7 @@ export interface AuditLogEntry {
   errorMessage?: string;
   errorStack?: string;
   site?: string;
+  environment?: string;
   userId?: string;
   userEmail?: string;
 }
@@ -45,7 +46,8 @@ export class AuditLogService {
           service: 'video-transcription',
           ...additionalData
         },
-        site: 'lbt'
+        site: 'lbt',
+        environment: serviceConfigs.envName || 'LOCAL'
       };
 
       console.log('[AUDIT] Logging transcription error:', {
@@ -97,7 +99,8 @@ export class AuditLogService {
           service: 'video-transcription',
           ...additionalData
         },
-        site: 'lbt'
+        site: 'lbt',
+        environment: serviceConfigs.envName || 'LOCAL'
       };
 
       console.log('[AUDIT] Logging transcription success:', transcriptId);
@@ -137,7 +140,8 @@ export class AuditLogService {
           service: 'video-transcription',
           ...data
         },
-        site: 'lbt'
+        site: 'lbt',
+        environment: serviceConfigs.envName || 'LOCAL'
       };
 
       await axios.post(
