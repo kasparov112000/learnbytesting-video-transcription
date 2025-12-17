@@ -307,8 +307,13 @@ export class TranscriptionService {
       } else if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
         transcriptionResult = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
-        // Assuming openaiWhisper.transcribe also returns an object with processing_time
-        transcriptionResult = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+        // OpenAI Whisper returns just the transcript string
+        const startTime = Date.now();
+        const transcriptText = await this.openaiWhisper.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = {
+          transcript: transcriptText,
+          processing_time: (Date.now() - startTime) / 1000
+        };
       } else if (serviceConfigs.transcriptionProvider === 'mock' && this.mockTranscription) {
         // Alternative way to enable mock
         transcriptionResult = {
@@ -316,8 +321,13 @@ export class TranscriptionService {
           processing_time: 0 // Mock transcription is instantaneous
         };
       } else if (this.googleSpeech) {
-        // Assuming googleSpeech.transcribe also returns an object with processing_time
-        transcriptionResult = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+        // Google Speech returns just the transcript string
+        const startTime = Date.now();
+        const transcriptText = await this.googleSpeech.transcribe(convertedAudioPath, transcript.language);
+        transcriptionResult = {
+          transcript: transcriptText,
+          processing_time: (Date.now() - startTime) / 1000
+        };
       } else {
         throw new Error('No transcription provider available');
       }
