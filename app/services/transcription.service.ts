@@ -582,7 +582,24 @@ export class TranscriptionService {
       // lastRow is -1 if there are more rows, otherwise it's the total count
       const lastRow = startRow + rows.length >= totalCount ? totalCount : -1;
 
-      return { rows, lastRow };
+      // Define admin-only fields that should be hidden from regular users
+      const adminOnlyFields = ['provider', 'createdByGuid', 'createdByEmail'];
+
+      // Strip admin-only fields for non-admin users
+      // Note: Field-level permissions apply even in local dev (unlike row filtering)
+      let processedRows = rows;
+      if (!isAdmin) {
+        console.log('[GRID] Stripping admin-only fields for non-admin user');
+        processedRows = rows.map(row => {
+          const rowObj = row.toObject ? row.toObject() : { ...row };
+          adminOnlyFields.forEach(field => {
+            delete rowObj[field];
+          });
+          return rowObj;
+        });
+      }
+
+      return { rows: processedRows, lastRow, isAdmin };
     } catch (error: any) {
       console.error('Error getting grid data:', error);
       return { rows: [], lastRow: 0 };
