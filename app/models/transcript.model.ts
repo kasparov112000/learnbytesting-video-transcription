@@ -2,8 +2,8 @@ import mongoose, { Schema, Document, Connection, Model } from 'mongoose';
 import { databaseService } from '../services/database.service';
 
 export interface ITranscript extends Document {
-  youtubeUrl: string;
-  videoId: string;
+  youtubeUrl?: string;  // Optional for file uploads
+  videoId?: string;  // Optional for file uploads
   videoTitle?: string;
   videoDuration?: number;
   transcript: string;
@@ -20,24 +20,29 @@ export interface ITranscript extends Document {
   completedDate?: Date;
   wordCount?: number;
   createdByGuid?: string;
+  createdByEmail?: string;
   modifiedByGuid?: string;
   // Metrics
   transcriptionDurationMs?: number;  // How long the transcription took in milliseconds
   requestSource?: 'local' | 'production';  // Where the request originated from
   processingStartedDate?: Date;  // When processing started (for calculating duration)
+  // New fields for upload flow
+  sourceType?: 'youtube-url' | 'youtube-recording' | 'file-upload';  // How the audio was obtained
+  originalFilename?: string;  // Original uploaded filename
+  mimeType?: string;  // MIME type of uploaded file
+  fileSize?: number;  // Size of uploaded file in bytes
 }
 
 const TranscriptSchema: Schema = new Schema({
   youtubeUrl: {
     type: String,
-    required: true,
-    index: true
+    index: true,
+    sparse: true  // Allow null/undefined values in index
   },
   videoId: {
     type: String,
-    required: true,
     index: true,
-    unique: true
+    sparse: true  // Allow null/undefined values in index
   },
   videoTitle: {
     type: String
@@ -99,7 +104,12 @@ const TranscriptSchema: Schema = new Schema({
     type: Number
   },
   createdByGuid: {
-    type: String
+    type: String,
+    index: true
+  },
+  createdByEmail: {
+    type: String,
+    index: true
   },
   modifiedByGuid: {
     type: String
@@ -114,6 +124,21 @@ const TranscriptSchema: Schema = new Schema({
   },
   processingStartedDate: {
     type: Date
+  },
+  // New fields for upload flow
+  sourceType: {
+    type: String,
+    enum: ['youtube-url', 'youtube-recording', 'file-upload'],
+    default: 'youtube-url'
+  },
+  originalFilename: {
+    type: String
+  },
+  mimeType: {
+    type: String
+  },
+  fileSize: {
+    type: Number
   }
 }, {
   timestamps: true,

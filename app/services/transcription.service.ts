@@ -215,6 +215,99 @@ export class TranscriptionService {
   }
 
   /**
+   * Start transcription from an uploaded audio file
+   * Used by the wizard when uploading a file or recording from YouTube
+   *
+   * @param audioFilePath Path to the uploaded audio file
+   * @param options Transcription options
+   * @param req Express request object for database selection
+   * @returns Transcript document ID
+   */
+  async startTranscriptionFromUpload(
+    audioFilePath: string,
+    options: {
+      language?: string;
+      videoTitle?: string;
+      youtubeVideoId?: string;
+      youtubeUrl?: string;
+      categoryId?: string;
+      category?: any;
+      videoDuration?: number | null;
+      originalFilename?: string;
+      mimeType?: string;
+      fileSize?: number;
+    },
+    req?: any
+  ): Promise<string> {
+    try {
+      console.log(`Starting transcription from uploaded file: ${audioFilePath}`);
+
+      // Get user context from request - parse if it's a JSON string (from multipart form)
+      let userContext = req?.body?.userContext;
+      if (typeof userContext === 'string') {
+        try {
+          userContext = JSON.parse(userContext);
+        } catch (e) {
+          console.warn('Failed to parse userContext:', e);
+          userContext = {};
+        }
+      }
+      const createdByGuid = userContext?.userGuid;
+      const createdByEmail = userContext?.userEmail;
+
+      console.log('Creating transcript with:');
+      console.log('  createdByGuid:', createdByGuid || 'not provided');
+      console.log('  createdByEmail:', createdByEmail || 'not provided');
+      console.log('  videoTitle:', options.videoTitle);
+      console.log('  youtubeVideoId:', options.youtubeVideoId);
+      console.log('  categoryId:', options.categoryId);
+
+      // Get the appropriate model based on request
+      const TranscriptModel = getTranscriptModelForRequest(req);
+
+      // Determine video title
+      const videoTitle = options.videoTitle ||
+        options.originalFilename ||
+        `Uploaded Audio - ${new Date().toISOString()}`;
+
+      // Create transcript document
+      const transcript = await TranscriptModel.create({
+        youtubeUrl: options.youtubeUrl || null,
+        videoId: options.youtubeVideoId || null,
+        videoTitle: videoTitle,
+        videoDuration: options.videoDuration || null,
+        language: options.language || serviceConfigs.defaultLanguage,
+        status: 'processing',
+        progress: 10,
+        provider: serviceConfigs.transcriptionProvider,
+        categoryId: options.categoryId || undefined,
+        category: options.category || undefined,
+        audioFilePath: audioFilePath,
+        createdDate: new Date(),
+        createdByGuid: createdByGuid || undefined,
+        createdByEmail: createdByEmail || undefined,
+        originalFilename: options.originalFilename,
+        mimeType: options.mimeType,
+        fileSize: options.fileSize,
+        sourceType: options.youtubeVideoId ? 'youtube-recording' : 'file-upload'
+      });
+
+      console.log(`Created transcript document: ${transcript._id}`);
+
+      // Start background processing
+      this.processTranscriptionWithFile(transcript._id.toString(), audioFilePath, req).catch((error) => {
+        console.error(`Error processing transcription ${transcript._id}:`, error);
+      });
+
+      return transcript._id.toString();
+
+    } catch (error: any) {
+      console.error('Error starting transcription from upload:', error);
+      throw new Error(`Failed to start transcription: ${error.message}`);
+    }
+  }
+
+  /**
    * Process transcription (background task)
    */
   private async processTranscription(transcriptId: string): Promise<void> {
@@ -941,18 +1034,36 @@ export class TranscriptionService {
         throw new Error(`Transcript not found: ${transcriptId}`);
       }
 
-      // Convert audio to speech-recognizable format
-      console.log('Step 1: Converting audio format...');
-      convertedAudioPath = await this.audioConverter.convertToSpeechFormat(audioFilePath);
+      // Check if we're using mock transcription (skip audio conversion)
+      const useMock = serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock';
 
-      transcript.progress = 50;
-      await transcript.save();
+      if (useMock) {
+        console.log('🎭 MOCK MODE: Skipping audio conversion');
+        transcript.progress = 50;
+        await transcript.save();
+      } else {
+        // Convert audio to speech-recognizable format
+        console.log('Step 1: Converting audio format...');
+        convertedAudioPath = await this.audioConverter.convertToSpeechFormat(audioFilePath);
+
+        transcript.progress = 50;
+        await transcript.save();
+      }
 
       // Transcribe audio using the configured provider
       console.log('Step 2: Transcribing audio...');
+      console.log(`  Provider: ${serviceConfigs.transcriptionProvider}`);
+      console.log(`  Mock mode: ${serviceConfigs.useMockTranscription}`);
       let transcriptionResult: { transcript: string; processing_time: number; language?: string; duration?: number };
 
-      if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
+      // Check for mock transcription first
+      if ((serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock') && this.mockTranscription) {
+        console.log('  Using MOCK transcription');
+        transcriptionResult = {
+          transcript: await this.mockTranscription.transcribe(convertedAudioPath || 'mock-audio.m4a', transcript.language),
+          processing_time: 0 // Mock transcription is instantaneous
+        };
+      } else if (serviceConfigs.transcriptionProvider === 'self-hosted' && this.selfHostedWhisper) {
         transcriptionResult = await this.selfHostedWhisper.transcribe(convertedAudioPath, transcript.language);
       } else if (serviceConfigs.transcriptionProvider === 'openai' && this.openaiWhisper) {
         // Assuming openaiWhisper.transcribe also returns an object with processing_time
@@ -969,7 +1080,7 @@ export class TranscriptionService {
           processing_time: 0 // Placeholder, actual time would come from service
         };
       } else {
-        throw new Error('No transcription provider available');
+        throw new Error(`No transcription provider available. Provider: ${serviceConfigs.transcriptionProvider}, Mock: ${serviceConfigs.useMockTranscription}`);
       }
 
       // Log processing time if available

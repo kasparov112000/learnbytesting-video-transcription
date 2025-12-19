@@ -22,9 +22,9 @@ const serviceConfigs = {
   // Transcription Service Provider: 'google', 'openai', 'self-hosted', or 'mock'
   transcriptionProvider: process.env.TRANSCRIPTION_PROVIDER || 'self-hosted',
 
-  // Mock Transcription - default true for manual download workflow
-  // Set USE_MOCK_TRANSCRIPTION=false to enable automatic downloading
-  useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION !== 'false',
+  // Mock Transcription - default false to use real transcription
+  // Set USE_MOCK_TRANSCRIPTION=true to use mock transcription for testing
+  useMockTranscription: process.env.USE_MOCK_TRANSCRIPTION === 'true',
 
   // Transcription Workflow Mode: 'auto' or 'manual_download'
   // - 'auto': Automatically download audio and transcribe (default when useMockTranscription=false)

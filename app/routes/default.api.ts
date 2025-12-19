@@ -1,4 +1,43 @@
 import { TranscriptionService } from '../services/transcription.service';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+
+// Configure multer for audio file uploads
+const uploadDir = path.join(__dirname, '../../temp/uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname) || '.webm';
+    cb(null, `audio-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 500 * 1024 * 1024, // 500MB max
+  },
+  fileFilter: (req, file, cb) => {
+    // Allow audio and video files
+    const allowedMimes = [
+      'audio/webm', 'audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/m4a', 'audio/ogg',
+      'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'
+    ];
+    if (allowedMimes.includes(file.mimetype) || file.mimetype.startsWith('audio/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type: ${file.mimetype}. Only audio and video files are allowed.`));
+    }
+  }
+});
 
 export default function (app: any, express: any) {
   const router = express.Router();
@@ -68,6 +107,82 @@ export default function (app: any, express: any) {
       console.error('Error starting transcription:', error);
       res.status(500).json({
         error: error.message || 'Failed to start transcription'
+      });
+    }
+  });
+
+  /**
+   * POST /transcription/upload-audio
+   * Upload an audio file for transcription (from file upload or recorded audio)
+   *
+   * Request: multipart/form-data
+   * - audioFile: The audio file to transcribe
+   * - language: Language code (optional, default: en-US)
+   * - videoTitle: Title for the transcription (optional)
+   * - youtubeVideoId: YouTube video ID if recording from YouTube (optional)
+   * - youtubeUrl: YouTube URL if recording from YouTube (optional)
+   * - categoryId: Category ID (optional)
+   * - category: Category object (optional)
+   * - videoDuration: Duration in seconds (optional)
+   *
+   * Response:
+   * {
+   *   "transcriptionId": "507f1f77bcf86cd799439011",
+   *   "status": "processing",
+   *   "message": "Audio uploaded and transcription started"
+   * }
+   */
+  router.post('/transcription/upload-audio', upload.single('audioFile'), async (req: any, res: any) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          error: 'No audio file provided'
+        });
+      }
+
+      console.log('POST /transcription/upload-audio');
+      console.log('File:', req.file.originalname, req.file.mimetype, req.file.size);
+      console.log('Language:', req.body.language);
+      console.log('Video Title:', req.body.videoTitle);
+      console.log('YouTube Video ID:', req.body.youtubeVideoId);
+      console.log('Category ID:', req.body.categoryId);
+      console.log('Video Duration:', req.body.videoDuration);
+
+      const transcriptId = await transcriptionService.startTranscriptionFromUpload(
+        req.file.path,
+        {
+          language: req.body.language || 'en-US',
+          videoTitle: req.body.videoTitle || req.file.originalname,
+          youtubeVideoId: req.body.youtubeVideoId,
+          youtubeUrl: req.body.youtubeUrl,
+          categoryId: req.body.categoryId,
+          category: req.body.category ? JSON.parse(req.body.category) : null,
+          videoDuration: req.body.videoDuration ? parseInt(req.body.videoDuration) : null,
+          originalFilename: req.file.originalname,
+          mimeType: req.file.mimetype,
+          fileSize: req.file.size
+        },
+        req
+      );
+
+      res.status(202).json({
+        transcriptionId: transcriptId,
+        status: 'processing',
+        message: 'Audio uploaded and transcription started'
+      });
+
+    } catch (error: any) {
+      console.error('Error uploading audio:', error);
+      // Clean up uploaded file on error
+      if (req.file && req.file.path) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (e) {
+          console.error('Error cleaning up file:', e);
+        }
+      }
+      res.status(500).json({
+        error: error.message || 'Failed to upload audio'
       });
     }
   });
