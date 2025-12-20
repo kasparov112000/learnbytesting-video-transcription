@@ -255,9 +255,14 @@ export class TranscriptionService {
       const createdByGuid = userContext?.userGuid;
       const createdByEmail = userContext?.userEmail;
 
+      // Determine request source (environment)
+      const isProductionSource = req && databaseService.isProductionRequest(req);
+      const requestSource = isProductionSource ? 'production' : 'local';
+
       console.log('Creating transcript with:');
       console.log('  createdByGuid:', createdByGuid || 'not provided');
       console.log('  createdByEmail:', createdByEmail || 'not provided');
+      console.log('  requestSource:', requestSource);
       console.log('  videoTitle:', options.videoTitle);
       console.log('  youtubeVideoId:', options.youtubeVideoId);
       console.log('  categoryId:', options.categoryId);
@@ -286,6 +291,7 @@ export class TranscriptionService {
         createdDate: new Date(),
         createdByGuid: createdByGuid || undefined,
         createdByEmail: createdByEmail || undefined,
+        requestSource: requestSource,
         originalFilename: options.originalFilename,
         mimeType: options.mimeType,
         fileSize: options.fileSize,
@@ -600,20 +606,40 @@ export class TranscriptionService {
       // Extract user context for filtering
       const userContext = gridRequest?.userContext;
       const userGuid = userContext?.userGuid;
+      const userEmail = userContext?.userEmail;
       const isAdmin = userContext?.isAdmin || false;
 
       console.log('[GRID] Environment:', isLocalDev ? 'LOCAL/DEV' : 'PRODUCTION');
       console.log('[GRID] User GUID:', userGuid);
+      console.log('[GRID] User Email:', userEmail);
       console.log('[GRID] Is Admin:', isAdmin);
 
       // Build query filter from ag-grid filterModel
       const filter: any = {};
 
+      // Track owner filter separately to combine with search later
+      let ownerFilter: any = null;
+
       // In production, filter by user unless they are admin
       // In development (localhost), show all records to all users
-      if (!isLocalDev && !isAdmin && userGuid) {
-        filter.createdByGuid = userGuid;
-        console.log('[GRID] Filtering by createdByGuid:', userGuid);
+      if (!isLocalDev && !isAdmin) {
+        // Try to filter by GUID first, then fall back to email
+        if (userGuid || userEmail) {
+          // Use $or to match by either GUID or email (for records created before GUID was captured)
+          const ownerConditions: any[] = [];
+          if (userGuid) {
+            ownerConditions.push({ createdByGuid: userGuid });
+          }
+          if (userEmail) {
+            ownerConditions.push({ createdByEmail: userEmail });
+          }
+          ownerFilter = { $or: ownerConditions };
+          console.log('[GRID] Filtering by owner - GUID:', userGuid, 'Email:', userEmail);
+        } else {
+          // No user identifier - show no records for safety
+          console.log('[GRID] No user identifier - showing no records');
+          filter._id = null; // This will match nothing
+        }
       } else {
         console.log('[GRID] Showing all records (isLocalDev:', isLocalDev, ', isAdmin:', isAdmin, ')');
       }
@@ -647,14 +673,45 @@ export class TranscriptionService {
       }
 
       // Handle global search
+      let searchFilter: any = null;
       if (gridRequest?.search?.search) {
         const searchRegex = { $regex: gridRequest.search.search, $options: 'i' };
-        filter.$or = [
-          { videoTitle: searchRegex },
-          { youtubeUrl: searchRegex },
-          { status: searchRegex }
-        ];
+        searchFilter = {
+          $or: [
+            { videoTitle: searchRegex },
+            { youtubeUrl: searchRegex },
+            { status: searchRegex }
+          ]
+        };
       }
+
+      // Combine all filters using $and if needed
+      let finalFilter = filter;
+      const andConditions: any[] = [];
+
+      // Add filter model conditions
+      if (Object.keys(filter).length > 0) {
+        andConditions.push(filter);
+      }
+
+      // Add owner filter
+      if (ownerFilter) {
+        andConditions.push(ownerFilter);
+      }
+
+      // Add search filter
+      if (searchFilter) {
+        andConditions.push(searchFilter);
+      }
+
+      // If we have multiple conditions, use $and
+      if (andConditions.length > 1) {
+        finalFilter = { $and: andConditions };
+      } else if (andConditions.length === 1) {
+        finalFilter = andConditions[0];
+      }
+
+      console.log('[GRID] Final filter:', JSON.stringify(finalFilter));
 
       // Build sort from ag-grid sortModel
       const sort: any = {};
@@ -668,8 +725,8 @@ export class TranscriptionService {
       }
 
       const [rows, totalCount] = await Promise.all([
-        TranscriptModel.find(filter).sort(sort).skip(startRow).limit(pageSize),
-        TranscriptModel.countDocuments(filter)
+        TranscriptModel.find(finalFilter).sort(sort).skip(startRow).limit(pageSize),
+        TranscriptModel.countDocuments(finalFilter)
       ]);
 
       // lastRow is -1 if there are more rows, otherwise it's the total count
