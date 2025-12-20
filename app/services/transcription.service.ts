@@ -585,7 +585,7 @@ export class TranscriptionService {
       isAdmin?: boolean;
       roles?: string[];
     };
-  }): Promise<{ rows: ITranscript[]; lastRow: number }> {
+  }): Promise<{ rows: any[]; lastRow: number; isAdmin?: boolean }> {
     try {
       const TranscriptModel = getTranscriptModelForRequest(req);
 
@@ -680,11 +680,11 @@ export class TranscriptionService {
 
       // Strip admin-only fields for non-admin users
       // Note: Field-level permissions apply even in local dev (unlike row filtering)
-      let processedRows = rows;
+      let processedRows: any[] = rows;
       if (!isAdmin) {
         console.log('[GRID] Stripping admin-only fields for non-admin user');
         processedRows = rows.map(row => {
-          const rowObj = row.toObject ? row.toObject() : { ...row };
+          const rowObj = (row as any).toObject ? (row as any).toObject() : { ...row };
           adminOnlyFields.forEach(field => {
             delete rowObj[field];
           });
