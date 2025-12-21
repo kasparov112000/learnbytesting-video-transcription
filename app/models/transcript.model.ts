@@ -41,8 +41,8 @@ const TranscriptSchema: Schema = new Schema({
   },
   videoId: {
     type: String,
-    index: true,
     sparse: true  // Allow null/undefined values in index
+    // Note: Compound index with createdByGuid defined below to allow same video for different users
   },
   videoTitle: {
     type: String
@@ -149,6 +149,8 @@ const TranscriptSchema: Schema = new Schema({
 TranscriptSchema.index({ createdDate: -1 });
 TranscriptSchema.index({ status: 1, createdDate: -1 });
 TranscriptSchema.index({ questionId: 1 });
+// Compound index to allow same video for different users (unique per user)
+TranscriptSchema.index({ videoId: 1, createdByGuid: 1 }, { unique: true, sparse: true });
 
 // Cache for compiled models per connection
 const modelCache = new Map<Connection, Model<ITranscript>>();

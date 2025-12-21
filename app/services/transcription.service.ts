@@ -222,16 +222,36 @@ export class TranscriptionService {
       console.log(`Video: ${videoInfo.title}`);
       console.log(`Duration: ${videoInfo.duration}s`);
 
-      // 2. Check if transcript already exists for this video
+      // Extract user context for createdByGuid and createdByEmail early
+      // so we can use it for the existing check
+      const userContext = req?.body?.userContext;
+      const createdByGuid = userContext?.userGuid;
+      const createdByEmail = userContext?.userEmail;
+
+      // Determine request source (environment) - local vs production
+      const isProductionSource = req && databaseService.isProductionRequest(req);
+      const requestSource = isProductionSource ? 'production' : 'local';
+
+      // 2. Check if transcript already exists for this video AND user
+      // Different users can transcribe the same video independently
       // Use appropriate connection based on request origin
       const TranscriptModel = getTranscriptModelForRequest(req);
-      const existing = await TranscriptModel.findOne({
+
+      // Build query: check for same video by this user (if user is identified)
+      const existingQuery: any = {
         videoId: videoInfo.videoId,
         status: { $in: ['completed', 'processing'] }
-      });
+      };
+
+      // Only filter by user if we have user identification
+      if (createdByGuid) {
+        existingQuery.createdByGuid = createdByGuid;
+      }
+
+      const existing = await TranscriptModel.findOne(existingQuery);
 
       if (existing) {
-        console.log(`Transcript already exists for video: ${videoInfo.videoId}`);
+        console.log(`Transcript already exists for video: ${videoInfo.videoId} (user: ${createdByGuid || 'unknown'})`);
 
         if (existing.status === 'completed') {
           return existing._id.toString();
@@ -252,12 +272,9 @@ export class TranscriptionService {
         ? videoInfo.title.trim()
         : `Video ${videoInfo.videoId || 'Unknown'}`;
 
-      // Extract user context for createdByGuid and createdByEmail
-      const userContext = req?.body?.userContext;
-      const createdByGuid = userContext?.userGuid;
-      const createdByEmail = userContext?.userEmail;
       console.log('Creating transcript with createdByGuid:', createdByGuid || 'not provided');
       console.log('Creating transcript with createdByEmail:', createdByEmail || 'not provided');
+      console.log('Creating transcript with requestSource:', requestSource);
 
       const transcript = await TranscriptModel.create({
         youtubeUrl,
@@ -271,7 +288,9 @@ export class TranscriptionService {
         questionId: questionId ? new mongoose.Types.ObjectId(questionId) : undefined,
         createdDate: new Date(),
         createdByGuid: createdByGuid || undefined,
-        createdByEmail: createdByEmail || undefined
+        createdByEmail: createdByEmail || undefined,
+        requestSource: requestSource,
+        sourceType: 'youtube-url'
       });
 
       console.log(`Created transcript document: ${transcript._id}`);
