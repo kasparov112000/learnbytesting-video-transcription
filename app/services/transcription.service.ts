@@ -115,15 +115,40 @@ export class TranscriptionService {
 
       // Check if we're using mock mode
       const useMock = serviceConfigs.useMockTranscription || serviceConfigs.transcriptionProvider === 'mock';
+      const isManualDownloadMode = serviceConfigs.transcriptionWorkflow === 'manual_download';
 
-      // 1. Get video information (or use mock data)
+      // Helper function to extract video ID from URL
+      const extractVideoId = (url: string): string | null => {
+        // Support youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID
+        const match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([^&?/]+)/);
+        return match ? match[1] : null;
+      };
+
+      // Helper function to fetch video title via oEmbed (no API key needed)
+      const fetchYouTubeTitleViaOEmbed = async (videoId: string): Promise<string | null> => {
+        try {
+          const axios = require('axios');
+          const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+          console.log(`🔍 Fetching title via oEmbed: ${oEmbedUrl}`);
+          const response = await axios.get(oEmbedUrl, { timeout: 5000 });
+          if (response.data && response.data.title) {
+            console.log(`✓ Got title via oEmbed: ${response.data.title}`);
+            return response.data.title;
+          }
+          return null;
+        } catch (error: any) {
+          console.warn(`⚠️ oEmbed fetch failed: ${error.message}`);
+          return null;
+        }
+      };
+
+      // 1. Get video information (or use mock/minimal data)
       let videoInfo;
       if (useMock) {
         console.log('🎭 MOCK MODE: Using mock video info (no YouTube API calls)');
-        // Extract video ID from URL or generate a mock one
-        const videoIdMatch = youtubeUrl.match(/[?&]v=([^&]+)/);
+        const videoId = extractVideoId(youtubeUrl) || 'mock-' + Date.now();
         videoInfo = {
-          videoId: videoIdMatch ? videoIdMatch[1] : 'mock-' + Date.now(),
+          videoId,
           title: 'Mock Video - ' + new Date().toISOString(),
           duration: 300, // 5 minutes mock duration
           thumbnail: 'https://via.placeholder.com/480x360?text=Mock+Video'
@@ -136,21 +161,62 @@ export class TranscriptionService {
           console.log(`✓ Video info retrieved from YouTube API`);
         } catch (error: any) {
           console.warn(`YouTube API failed: ${error.message}`);
-          // In manual_download mode, don't fall back to Python downloader - we only need video info
-          const isManualDownload = serviceConfigs.transcriptionWorkflow === 'manual_download';
-          if (isManualDownload) {
-            throw new Error(`YouTube API failed to get video info: ${error.message}. Please check YOUTUBE_API_KEY is configured.`);
+          // In manual_download mode, use minimal info from URL + oEmbed for title
+          if (isManualDownloadMode) {
+            const videoId = extractVideoId(youtubeUrl);
+            if (!videoId) {
+              throw new Error('Invalid YouTube URL - could not extract video ID');
+            }
+            console.log('📱 Manual download mode: Using oEmbed for video title');
+            const oEmbedTitle = await fetchYouTubeTitleViaOEmbed(videoId);
+            videoInfo = {
+              videoId,
+              title: oEmbedTitle || `Video ${videoId}`,
+              duration: 0,
+              thumbnail: ''
+            };
+          } else {
+            // Try Python downloader, fall back to URL extraction if unavailable
+            try {
+              console.log('Falling back to yt-dlp for video info...');
+              videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
+            } catch (downloaderError: any) {
+              console.warn(`Python downloader also failed: ${downloaderError.message}`);
+              const videoId = extractVideoId(youtubeUrl);
+              if (!videoId) {
+                throw new Error('Invalid YouTube URL - could not extract video ID');
+              }
+              console.log('📦 Using oEmbed for video title (both YouTube API and downloader unavailable)');
+              const oEmbedTitle = await fetchYouTubeTitleViaOEmbed(videoId);
+              videoInfo = {
+                videoId,
+                title: oEmbedTitle || `Video ${videoId}`,
+                duration: 0,
+                thumbnail: ''
+              };
+            }
           }
-          console.log('Falling back to yt-dlp for video info...');
-          videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
         }
       } else {
-        // No YouTube API configured
-        const isManualDownload = serviceConfigs.transcriptionWorkflow === 'manual_download';
-        if (isManualDownload) {
-          throw new Error('YouTube API is required for manual_download mode. Please set YOUTUBE_API_KEY environment variable.');
+        // No YouTube API configured - try Python downloader first, then URL extraction
+        try {
+          console.log('No YouTube API - trying Python downloader for video info...');
+          videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
+        } catch (downloaderError: any) {
+          console.warn(`Python downloader failed: ${downloaderError.message}`);
+          const videoId = extractVideoId(youtubeUrl);
+          if (!videoId) {
+            throw new Error('Invalid YouTube URL - could not extract video ID');
+          }
+          console.log('📦 Using oEmbed for video title (no YouTube API, downloader unavailable)');
+          const oEmbedTitle = await fetchYouTubeTitleViaOEmbed(videoId);
+          videoInfo = {
+            videoId,
+            title: oEmbedTitle || `Video ${videoId}`,
+            duration: 0,
+            thumbnail: ''
+          };
         }
-        videoInfo = await this.youtubeDownloader.getVideoInfo(youtubeUrl);
       }
 
       console.log(`Video: ${videoInfo.title}`);
@@ -175,12 +241,9 @@ export class TranscriptionService {
         }
       }
 
-      // Check if we're in manual download workflow mode
-      // Manual download mode works independently of mock mode:
-      // - mock=true + manual_download: Use mock video info, status=pending_download
-      // - mock=false + manual_download: Fetch real video info from YouTube, status=pending_download
-      // - mock=false + auto: Fetch real video info, auto-process transcription
-      const isManualDownloadMode = serviceConfigs.transcriptionWorkflow === 'manual_download';
+      // Determine initial status based on workflow mode
+      // - manual_download: status=pending_download (wait for external audio sync)
+      // - auto: status=pending (will auto-process)
       const initialStatus = isManualDownloadMode ? 'pending_download' : 'pending';
 
       // 3. Create transcript document
@@ -189,10 +252,12 @@ export class TranscriptionService {
         ? videoInfo.title.trim()
         : `Video ${videoInfo.videoId || 'Unknown'}`;
 
-      // Extract user context for createdByGuid
+      // Extract user context for createdByGuid and createdByEmail
       const userContext = req?.body?.userContext;
       const createdByGuid = userContext?.userGuid;
+      const createdByEmail = userContext?.userEmail;
       console.log('Creating transcript with createdByGuid:', createdByGuid || 'not provided');
+      console.log('Creating transcript with createdByEmail:', createdByEmail || 'not provided');
 
       const transcript = await TranscriptModel.create({
         youtubeUrl,
@@ -205,7 +270,8 @@ export class TranscriptionService {
         provider: serviceConfigs.transcriptionProvider,
         questionId: questionId ? new mongoose.Types.ObjectId(questionId) : undefined,
         createdDate: new Date(),
-        createdByGuid: createdByGuid || undefined
+        createdByGuid: createdByGuid || undefined,
+        createdByEmail: createdByEmail || undefined
       });
 
       console.log(`Created transcript document: ${transcript._id}`);
