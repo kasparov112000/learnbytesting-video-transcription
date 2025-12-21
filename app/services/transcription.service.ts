@@ -10,6 +10,31 @@ import { serviceConfigs } from '../../config/global.config';
 import { databaseService } from './database.service';
 import { auditLogService } from './audit-log.service';
 import mongoose from 'mongoose';
+import { has, isEmpty, isEqual, trim } from 'lodash';
+import moment from 'moment';
+
+// Define interface for sort model items (matches ag-grid)
+interface GridSortItem {
+  colId: string;
+  sort: 'asc' | 'desc';
+}
+
+// Grid request interface matching ag-grid IServerSideGetRowsRequest
+interface GridServerSideRowRequest {
+  startRow?: number;
+  endRow?: number;
+  sortModel?: GridSortItem[];
+  filterModel?: Record<string, any>;
+  search?: {
+    search?: string;
+  };
+  userContext?: {
+    userGuid?: string;
+    userEmail?: string;
+    isAdmin?: boolean;
+    roles?: string[];
+  };
+}
 
 export class TranscriptionService {
   private youtubeDownloader: PythonYouTubeDownloaderService;
@@ -576,32 +601,25 @@ export class TranscriptionService {
   }
 
   /**
-   * Get transcripts for ag-grid with server-side pagination
-   * Supports sorting, filtering, and pagination from ag-grid requests
+   * Get transcripts for ag-grid with server-side pagination using MongoDB aggregation pipeline.
+   * Supports sorting, filtering, and pagination from ag-grid requests.
+   *
+   * Uses aggregation pipeline pattern from category.service.ts for better performance:
+   * - $match for filtering
+   * - $sort for ordering
+   * - $group and $project for efficient pagination with total count in single query
    */
-  async getGrid(req?: any, gridRequest?: {
-    startRow?: number;
-    endRow?: number;
-    sortModel?: Array<{ colId: string; sort: 'asc' | 'desc' }>;
-    filterModel?: Record<string, any>;
-    search?: { search?: string };
-    userContext?: {
-      userGuid?: string;
-      userEmail?: string;
-      isAdmin?: boolean;
-      roles?: string[];
-    };
-  }): Promise<{ rows: any[]; lastRow: number; isAdmin?: boolean }> {
+  async getGrid(req?: any, gridRequest?: GridServerSideRowRequest): Promise<{ rows: any[]; lastRow: number; isAdmin?: boolean }> {
     try {
+      console.log('[GRID-AGG] Starting grid aggregation pipeline');
+      console.log('[GRID-AGG] Request params:', JSON.stringify(gridRequest, null, 2));
+
       const TranscriptModel = getTranscriptModelForRequest(req);
 
-      const startRow = gridRequest?.startRow || 0;
-      const endRow = gridRequest?.endRow || 20;
-      const pageSize = endRow - startRow;
-
-      // Check environment - development (localhost) allows all users to see all records
-      const isLocalDev = !req?.headers?.['x-source-cluster'] &&
-                         (process.env.ENV_NAME === 'LOCAL' || !process.env.ENV_NAME);
+      const start = parseInt(gridRequest?.startRow?.toString() || '0', 10);
+      const pageSize = gridRequest?.endRow && gridRequest?.startRow
+        ? gridRequest.endRow - gridRequest.startRow
+        : 20;
 
       // Extract user context for filtering
       const userContext = gridRequest?.userContext;
@@ -609,23 +627,15 @@ export class TranscriptionService {
       const userEmail = userContext?.userEmail;
       const isAdmin = userContext?.isAdmin || false;
 
-      console.log('[GRID] Environment:', isLocalDev ? 'LOCAL/DEV' : 'PRODUCTION');
-      console.log('[GRID] User GUID:', userGuid);
-      console.log('[GRID] User Email:', userEmail);
-      console.log('[GRID] Is Admin:', isAdmin);
+      console.log('[GRID-AGG] User GUID:', userGuid);
+      console.log('[GRID-AGG] User Email:', userEmail);
+      console.log('[GRID-AGG] Is Admin:', isAdmin);
 
-      // Build query filter from ag-grid filterModel
-      const filter: any = {};
-
-      // Track owner filter separately to combine with search later
+      // Build owner filter for non-admin users (applies in ALL environments)
+      // Only admin users can see all records
       let ownerFilter: any = null;
-
-      // In production, filter by user unless they are admin
-      // In development (localhost), show all records to all users
-      if (!isLocalDev && !isAdmin) {
-        // Try to filter by GUID first, then fall back to email
+      if (!isAdmin) {
         if (userGuid || userEmail) {
-          // Use $or to match by either GUID or email (for records created before GUID was captured)
           const ownerConditions: any[] = [];
           if (userGuid) {
             ownerConditions.push({ createdByGuid: userGuid });
@@ -634,114 +644,114 @@ export class TranscriptionService {
             ownerConditions.push({ createdByEmail: userEmail });
           }
           ownerFilter = { $or: ownerConditions };
-          console.log('[GRID] Filtering by owner - GUID:', userGuid, 'Email:', userEmail);
+          console.log('[GRID-AGG] Filtering by owner - GUID:', userGuid, 'Email:', userEmail);
         } else {
-          // No user identifier - show no records for safety
-          console.log('[GRID] No user identifier - showing no records');
-          filter._id = null; // This will match nothing
+          console.log('[GRID-AGG] No user identifier - showing no records');
+          return { rows: [], lastRow: 0, isAdmin };
         }
       } else {
-        console.log('[GRID] Showing all records (isLocalDev:', isLocalDev, ', isAdmin:', isAdmin, ')');
+        console.log('[GRID-AGG] Admin user - showing all records');
       }
 
-      if (gridRequest?.filterModel) {
-        for (const [field, filterDef] of Object.entries(gridRequest.filterModel)) {
-          const filterValue = filterDef as any;
+      // Build sort order
+      let sort = this.getSortOrder(gridRequest);
 
-          if (filterValue.filterType === 'text') {
-            if (filterValue.type === 'contains') {
-              filter[field] = { $regex: filterValue.filter, $options: 'i' };
-            } else if (filterValue.type === 'equals') {
-              filter[field] = filterValue.filter;
-            }
-          } else if (filterValue.filterType === 'set') {
-            if (filterValue.values && filterValue.values.length > 0) {
-              filter[field] = { $in: filterValue.values };
-            }
-          } else if (filterValue.filterType === 'date') {
-            // Handle date filters
-            if (filterValue.dateFrom) {
-              filter[field] = filter[field] || {};
-              filter[field].$gte = new Date(filterValue.dateFrom);
-            }
-            if (filterValue.dateTo) {
-              filter[field] = filter[field] || {};
-              filter[field].$lte = new Date(filterValue.dateTo);
-            }
-          }
-        }
+      // Handle special sort cases (e.g., boolean fields)
+      if (gridRequest?.sortModel?.[0]?.colId === 'isCompleted') {
+        const isCompleted = gridRequest.sortModel[0].sort === 'asc';
+        sort = { status: isCompleted ? 1 : -1 };
       }
 
-      // Handle global search
-      let searchFilter: any = null;
-      if (gridRequest?.search?.search) {
-        const searchRegex = { $regex: gridRequest.search.search, $options: 'i' };
-        searchFilter = {
-          $or: [
-            { videoTitle: searchRegex },
-            { youtubeUrl: searchRegex },
-            { status: searchRegex }
-          ]
-        };
-      }
+      // Build filter from ag-grid filterModel
+      const query = this.getGridFilter(gridRequest);
 
-      // Combine all filters using $and if needed
-      let finalFilter = filter;
+      // Build final match query combining all filters
+      const matchQuery: any = {};
       const andConditions: any[] = [];
 
-      // Add filter model conditions
-      if (Object.keys(filter).length > 0) {
-        andConditions.push(filter);
+      if (Object.keys(query).length > 0) {
+        andConditions.push(query);
       }
 
-      // Add owner filter
       if (ownerFilter) {
         andConditions.push(ownerFilter);
       }
 
-      // Add search filter
-      if (searchFilter) {
-        andConditions.push(searchFilter);
-      }
-
-      // If we have multiple conditions, use $and
-      if (andConditions.length > 1) {
-        finalFilter = { $and: andConditions };
-      } else if (andConditions.length === 1) {
-        finalFilter = andConditions[0];
-      }
-
-      console.log('[GRID] Final filter:', JSON.stringify(finalFilter));
-
-      // Build sort from ag-grid sortModel
-      const sort: any = {};
-      if (gridRequest?.sortModel && gridRequest.sortModel.length > 0) {
-        for (const sortItem of gridRequest.sortModel) {
-          sort[sortItem.colId] = sortItem.sort === 'asc' ? 1 : -1;
+      // Handle global search - searches across multiple fields
+      if (gridRequest?.search?.search) {
+        const searchText = trim(gridRequest.search.search);
+        if (searchText) {
+          const searchRegex = { $regex: this.escapeRegex(searchText), $options: 'i' };
+          andConditions.push({
+            $or: [
+              { videoTitle: searchRegex },
+              { youtubeUrl: searchRegex },
+              { videoId: searchRegex },
+              { status: searchRegex },
+              { transcript: searchRegex },
+              { 'category.name': searchRegex },
+              { 'category.displayName': searchRegex },
+              { language: searchRegex }
+            ]
+          });
+          console.log('[GRID-AGG] Global search applied for:', searchText);
         }
-      } else {
-        // Default sort by createdDate descending
-        sort.createdDate = -1;
       }
 
-      const [rows, totalCount] = await Promise.all([
-        TranscriptModel.find(finalFilter).sort(sort).skip(startRow).limit(pageSize),
-        TranscriptModel.countDocuments(finalFilter)
-      ]);
+      // Combine conditions
+      if (andConditions.length > 1) {
+        Object.assign(matchQuery, { $and: andConditions });
+      } else if (andConditions.length === 1) {
+        Object.assign(matchQuery, andConditions[0]);
+      }
 
-      // lastRow is -1 if there are more rows, otherwise it's the total count
-      const lastRow = startRow + rows.length >= totalCount ? totalCount : -1;
+      console.log('[GRID-AGG] Match query:', JSON.stringify(matchQuery));
+      console.log('[GRID-AGG] Sort:', JSON.stringify(sort));
+
+      // Build aggregation pipeline
+      const aggregate: any[] = [
+        { $match: matchQuery }
+      ];
+
+      // Add sort stage if we have sort criteria
+      if (!isEmpty(sort)) {
+        aggregate.push({ $sort: sort });
+      }
+
+      // Group all documents and calculate total count, then slice for pagination
+      aggregate.push(
+        {
+          $group: {
+            _id: null,
+            rows: { $push: '$$ROOT' },
+            lastRow: { $sum: 1 }
+          }
+        },
+        {
+          $project: {
+            lastRow: 1,
+            rows: {
+              $slice: ['$rows', start, pageSize]
+            }
+          }
+        }
+      );
+
+      console.log('[GRID-AGG] Running aggregation pipeline...');
+      const results = await TranscriptModel.aggregate(aggregate);
+      const response = results[0] || { rows: [], lastRow: 0 };
+
+      console.log('[GRID-AGG] Results: rows=', response.rows?.length, 'lastRow=', response.lastRow);
 
       // Define admin-only fields that should be hidden from regular users
       const adminOnlyFields = ['provider', 'createdByGuid', 'createdByEmail'];
 
       // Strip admin-only fields for non-admin users
-      // Note: Field-level permissions apply even in local dev (unlike row filtering)
-      let processedRows: any[] = rows;
+      let processedRows: any[] = response.rows || [];
       if (!isAdmin) {
-        console.log('[GRID] Stripping admin-only fields for non-admin user');
-        processedRows = rows.map(row => {
-          const rowObj = (row as any).toObject ? (row as any).toObject() : { ...row };
+        console.log('[GRID-AGG] Stripping admin-only fields for non-admin user');
+        processedRows = processedRows.map(row => {
+          const rowObj = { ...row };
           adminOnlyFields.forEach(field => {
             delete rowObj[field];
           });
@@ -749,11 +759,253 @@ export class TranscriptionService {
         });
       }
 
-      return { rows: processedRows, lastRow, isAdmin };
+      return { rows: processedRows, lastRow: response.lastRow, isAdmin };
     } catch (error: any) {
-      console.error('Error getting grid data:', error);
+      console.error('[GRID-AGG] Error getting grid data:', error);
       return { rows: [], lastRow: 0 };
     }
+  }
+
+  /**
+   * Helper method to get sort order from grid request
+   */
+  private getSortOrder(params?: GridServerSideRowRequest): Record<string, number> {
+    const shouldSort = params?.sortModel && params.sortModel.length > 0;
+
+    if (!shouldSort) {
+      return { createdDate: -1 }; // Default sort by createdDate descending
+    }
+
+    const { colId, sort } = params!.sortModel![0];
+    let key: string;
+
+    // Map field names to their nested paths if needed
+    switch (colId) {
+      case 'category':
+        key = 'category.name';
+        break;
+      case 'createdBy':
+        key = 'createdByEmail';
+        break;
+      default:
+        key = colId;
+        break;
+    }
+
+    return { [key]: sort === 'desc' ? -1 : 1 };
+  }
+
+  /**
+   * Build MongoDB query filter from ag-grid filterModel
+   */
+  private getGridFilter(params?: GridServerSideRowRequest): Record<string, any> {
+    let query: any = {};
+    const queries: any[] = [];
+
+    if (!params?.filterModel) {
+      return query;
+    }
+
+    const entries = Object.entries(params.filterModel);
+    for (const [key, value] of entries) {
+      const filterValue = value as any;
+      const operator = filterValue.operator === 'AND' ? '$and'
+                     : filterValue.operator === 'OR' ? '$or'
+                     : undefined;
+
+      let fieldKey = this.convertFieldToKey(key);
+      let filter: any;
+
+      switch (filterValue.filterType) {
+        case 'number': {
+          if (operator) {
+            filter = {
+              [operator]: [
+                { [fieldKey]: this.getNumberFilter(filterValue.condition1) },
+                { [fieldKey]: this.getNumberFilter(filterValue.condition2) }
+              ]
+            };
+          } else {
+            filter = { [fieldKey]: this.getNumberFilter(filterValue) };
+          }
+          break;
+        }
+        case 'text': {
+          if (operator) {
+            filter = {
+              [operator]: [
+                { [fieldKey]: this.getTextFilter(filterValue.condition1) },
+                { [fieldKey]: this.getTextFilter(filterValue.condition2) }
+              ]
+            };
+          } else {
+            filter = { [fieldKey]: this.getTextFilter(filterValue) };
+          }
+          break;
+        }
+        case 'date': {
+          if (operator) {
+            filter = {
+              [operator]: [
+                { [fieldKey]: this.getDateFilter(filterValue.condition1) },
+                { [fieldKey]: this.getDateFilter(filterValue.condition2) }
+              ]
+            };
+          } else {
+            filter = { [fieldKey]: this.getDateFilter(filterValue) };
+          }
+          break;
+        }
+        case 'set': {
+          filter = { [fieldKey]: this.getSetFilter(filterValue) };
+          break;
+        }
+        default: {
+          console.warn(`[GRID-AGG] Unknown filter type: ${filterValue.filterType}`);
+          break;
+        }
+      }
+
+      if (filter) {
+        queries.push(filter);
+      }
+    }
+
+    if (queries.length === 1) {
+      query = queries.shift();
+    } else if (queries.length > 0) {
+      query = { $and: queries };
+    }
+
+    return query;
+  }
+
+  /**
+   * Build MongoDB number filter
+   */
+  private getNumberFilter(item: any): any {
+    switch (item.type) {
+      case 'equals':
+        return { $eq: item.filter };
+      case 'notEqual':
+        return { $ne: item.filter };
+      case 'greaterThan':
+        return { $gt: item.filter };
+      case 'greaterThanOrEqual':
+        return { $gte: item.filter };
+      case 'lessThan':
+        return { $lt: item.filter };
+      case 'lessThanOrEqual':
+        return { $lte: item.filter };
+      case 'inRange':
+        return { $gte: item.filter, $lte: item.filterTo };
+      default:
+        console.warn(`[GRID-AGG] Unknown number filter type: ${item.type}`);
+        return {};
+    }
+  }
+
+  /**
+   * Build MongoDB text filter
+   */
+  private getTextFilter(item: any): any {
+    switch (item.type) {
+      case 'equals':
+        return { $eq: item.filter };
+      case 'notEqual':
+        return { $ne: item.filter };
+      case 'contains':
+        return { $regex: this.escapeRegex(item.filter), $options: 'i' };
+      case 'notContains':
+        return { $not: { $regex: this.escapeRegex(item.filter), $options: 'i' } };
+      case 'startsWith':
+        return { $regex: `^${this.escapeRegex(item.filter)}`, $options: 'i' };
+      case 'endsWith':
+        return { $regex: `${this.escapeRegex(item.filter)}$`, $options: 'i' };
+      case 'blank':
+        return { $in: [null, ''] };
+      case 'notBlank':
+        return { $nin: [null, ''], $exists: true };
+      default:
+        console.warn(`[GRID-AGG] Unknown text filter type: ${item.type}`);
+        return {};
+    }
+  }
+
+  /**
+   * Build MongoDB date filter
+   */
+  private getDateFilter(item: any): any {
+    const date = moment.utc(item.dateFrom).format('YYYY-MM-DD HH:mm:ss');
+
+    switch (item.type) {
+      case 'equals':
+        return {
+          $gte: new Date(moment.utc(date).startOf('day').toISOString()),
+          $lte: new Date(moment.utc(date).endOf('day').toISOString())
+        };
+      case 'notEqual':
+        return {
+          $not: {
+            $gte: new Date(moment.utc(date).startOf('day').toISOString()),
+            $lte: new Date(moment.utc(date).endOf('day').toISOString())
+          }
+        };
+      case 'greaterThan':
+        return { $gte: new Date(moment.utc(date).endOf('day').toISOString()) };
+      case 'greaterThanOrEqual':
+        return { $gte: new Date(moment.utc(date).startOf('day').toISOString()) };
+      case 'lessThan':
+        return { $lt: new Date(moment.utc(date).startOf('day').toISOString()) };
+      case 'lessThanOrEqual':
+        return { $lte: new Date(moment.utc(date).endOf('day').toISOString()) };
+      case 'inRange': {
+        const utcDateTo = moment.utc(item.dateTo).toDate();
+        return {
+          $gte: new Date(moment.utc(date).startOf('day').toISOString()),
+          $lte: new Date(moment.utc(utcDateTo).endOf('day').toISOString())
+        };
+      }
+      default:
+        console.warn(`[GRID-AGG] Unknown date filter type: ${item.type}`);
+        return {};
+    }
+  }
+
+  /**
+   * Build MongoDB set filter ($in)
+   */
+  private getSetFilter(item: any): any {
+    const values = item?.values || [];
+    return {
+      $in: values.map((value: string) => {
+        // Handle boolean strings
+        if (value === 'true') return true;
+        if (value === 'false') return false;
+        return value;
+      })
+    };
+  }
+
+  /**
+   * Map grid field names to MongoDB field paths
+   */
+  private convertFieldToKey(field: string): string {
+    switch (field) {
+      case 'category':
+        return 'category.name';
+      case 'createdBy':
+        return 'createdByEmail';
+      default:
+        return field;
+    }
+  }
+
+  /**
+   * Escape special regex characters in a string
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
